@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Header from './components/Header';
 import MessageBubble from './components/MessageBubble';
@@ -191,26 +190,52 @@ const App: React.FC = () => {
     }));
 
     const currentHistory = [...session.messages];
+    const assistantId = (Date.now() + 1).toString();
+    
     setInputText('');
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await geminiService.sendMessage(userMessage.content, currentHistory);
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+      // 1. Create a placeholder assistant message
+      const assistantPlaceholder: Message = {
+        id: assistantId,
         role: 'assistant',
-        content: response,
+        content: '',
         timestamp: new Date().toISOString(),
       };
+
       setSessions(prev => prev.map(s => 
         s.id === activeSessionId 
-          ? { ...s, messages: [...s.messages, assistantMessage], updatedAt: new Date().toISOString() } 
+          ? { ...s, messages: [...s.messages, assistantPlaceholder] } 
           : s
       ));
+
+      // 2. Start streaming
+      const stream = geminiService.sendMessageStream(userMessage.content, currentHistory);
+      
+      let fullContent = '';
+      for await (const chunk of stream) {
+        fullContent += chunk;
+        // Turn off loading once first chunk arrives
+        setIsLoading(false);
+        
+        setSessions(prev => prev.map(s => 
+          s.id === activeSessionId 
+            ? {
+                ...s,
+                messages: s.messages.map(m => 
+                  m.id === assistantId ? { ...m, content: fullContent } : m
+                ),
+                updatedAt: new Date().toISOString()
+              }
+            : s
+        ));
+      }
+
     } catch (err: any) {
-      setError("I'm here, but my thoughts are a bit scattered. Let's try again.");
-    } finally {
+      console.error(err);
+      setError(`Notice: ${err.message || 'The connection was interrupted. Please try again.'}`);
       setIsLoading(false);
     }
   };
@@ -346,7 +371,9 @@ const App: React.FC = () => {
                 )}
 
                 {error && (
-                  <div className="p-4 rounded-xl bg-red-50 text-red-600 text-[10px] text-center border border-red-100 font-bold uppercase tracking-widest">{error}</div>
+                  <div className="p-4 rounded-xl bg-red-50 text-red-600 text-xs text-center border border-red-100 font-medium">
+                    {error}
+                  </div>
                 )}
                 <div ref={messagesEndRef} />
               </div>
