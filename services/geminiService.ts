@@ -1,23 +1,17 @@
-import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { THERAPIST_SYSTEM_PROMPT, MODEL_NAME } from "../constants";
 import { Message, MentalHealthStatus } from "../types";
 
 class GeminiService {
   private getClient() {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) {
-      throw new Error("API_KEY_NOT_FOUND");
-    }
-    return new GoogleGenAI({ apiKey });
+    // API key is strictly obtained from process.env.API_KEY
+    return new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
 
   public async *sendMessageStream(message: string, history: Message[]) {
     try {
       const ai = this.getClient();
       
-      // Convert our history format to Gemini's history format
-      // Note: We exclude the very last message if it was just added to the state 
-      // because we pass the 'message' separately to sendMessageStream
       const geminiHistory = history.map(m => ({
         role: (m.role === 'assistant' ? 'model' : 'user') as "user" | "model",
         parts: [{ text: m.content }]
@@ -42,9 +36,6 @@ class GeminiService {
       }
     } catch (error: any) {
       console.error("Gemini Streaming Error:", error);
-      if (error.message === "API_KEY_NOT_FOUND") {
-        throw new Error("API Key is missing from the environment.");
-      }
       throw error;
     }
   }

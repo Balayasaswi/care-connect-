@@ -177,7 +177,6 @@ const App: React.FC = () => {
       timestamp: new Date().toISOString(),
     };
 
-    // Update history before sending
     const currentHistory = [...session.messages];
 
     setSessions(prev => prev.map(s => {
@@ -199,7 +198,6 @@ const App: React.FC = () => {
     setError(null);
 
     try {
-      // 1. Prepare assistant message placeholder
       const assistantPlaceholder: Message = {
         id: assistantId,
         role: 'assistant',
@@ -213,13 +211,12 @@ const App: React.FC = () => {
           : s
       ));
 
-      // 2. Begin streaming
       setIsStreaming(true);
       const stream = geminiService.sendMessageStream(userMessage.content, currentHistory);
       
       let fullContent = '';
       for await (const chunk of stream) {
-        if (isLoading) setIsLoading(false); // Stop generic loading spinner once first token arrives
+        if (isLoading) setIsLoading(false);
         
         fullContent += chunk;
         setSessions(prev => prev.map(s => 
@@ -236,7 +233,7 @@ const App: React.FC = () => {
       }
     } catch (err: any) {
       console.error(err);
-      setError(`Notice: ${err.message || 'The connection was interrupted. Please try again.'}`);
+      setError(`Notice: ${err.message || 'An error occurred while connecting. Please try again.'}`);
     } finally {
       setIsLoading(false);
       setIsStreaming(false);
