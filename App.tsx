@@ -21,10 +21,15 @@ const App: React.FC = () => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const executeArchivalPipeline = async (summary: string) => {
-    const analysis = await geminiService.analyzeMentalHealth(summary);
-    const mockCid = "Qm" + Array.from({length: 44}, () => "abcdef0123456789"[Math.floor(Math.random() * 16)]).join("");
-    const mockTx = "0x" + Array.from({length: 64}, () => "abcdef0123456789"[Math.floor(Math.random() * 16)]).join("");
-    return { ...analysis, cid: mockCid, tx: mockTx };
+    try {
+      const analysis = await geminiService.analyzeMentalHealth(summary);
+      const mockCid = "Qm" + Array.from({length: 44}, () => "abcdef0123456789"[Math.floor(Math.random() * 16)]).join("");
+      const mockTx = "0x" + Array.from({length: 64}, () => "abcdef0123456789"[Math.floor(Math.random() * 16)]).join("");
+      return { ...analysis, cid: mockCid, tx: mockTx };
+    } catch (err) {
+      console.error("Pipeline failure", err);
+      return { mentalHealth: "NEUTRAL" as MentalHealthStatus, keywords: [], cid: "N/A", tx: "N/A" };
+    }
   };
 
   const triggerAutoArchive = useCallback(async (session: ChatSession) => {
@@ -71,13 +76,19 @@ const App: React.FC = () => {
         const savedJournalsStr = localStorage.getItem('serenity_journals');
         
         if (savedSessionsStr) {
-          historicalSessions = JSON.parse(savedSessionsStr).map((s: ChatSession) => ({ ...s, isLocked: true }));
+          const parsed = JSON.parse(savedSessionsStr);
+          if (Array.isArray(parsed)) {
+            historicalSessions = parsed.map((s: ChatSession) => ({ ...s, isLocked: true }));
+          }
         }
         if (savedJournalsStr) {
-          historicalJournals = JSON.parse(savedJournalsStr);
+          const parsed = JSON.parse(savedJournalsStr);
+          if (Array.isArray(parsed)) {
+            historicalJournals = parsed;
+          }
         }
       } catch (e) {
-        console.error("History load error, starting fresh", e);
+        console.warn("Storage data malformed, starting fresh");
       }
 
       const id = Date.now().toString();
@@ -98,9 +109,7 @@ const App: React.FC = () => {
       setSessions([freshSession, ...historicalSessions]);
       setJournalFiles(historicalJournals);
       setActiveSessionId(id);
-      
-      // Delay slightly for smooth transition
-      setTimeout(() => setIsInitialized(true), 800);
+      setIsInitialized(true);
     };
 
     initialize();
@@ -112,7 +121,7 @@ const App: React.FC = () => {
         localStorage.setItem('serenity_sessions', JSON.stringify(sessions));
         localStorage.setItem('serenity_journals', JSON.stringify(journalFiles));
       } catch (e) {
-        console.error("Save state error", e);
+        console.error("Local storage write error:", e);
       }
     }
   }, [sessions, journalFiles, isInitialized]);
@@ -200,7 +209,7 @@ const App: React.FC = () => {
           : s
       ));
     } catch (err: any) {
-      setError("I'm here, but the connection seems weak. Let's try again.");
+      setError("I'm here, but my thoughts are a bit scattered. Let's try again.");
     } finally {
       setIsLoading(false);
     }
@@ -210,17 +219,11 @@ const App: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeSessionId, sessions]);
 
-  // Loading Screen
   if (!isInitialized) {
     return (
-      <div className="flex flex-col h-screen items-center justify-center bg-[#faf9f6]">
-        <div className="w-16 h-16 relative">
-          <div className="absolute inset-0 border-4 border-emerald-100 rounded-full"></div>
-          <div className="absolute inset-0 border-4 border-emerald-600 rounded-full border-t-transparent animate-spin"></div>
-        </div>
-        <p className="mt-6 text-emerald-800 font-serif italic tracking-wide animate-pulse">
-          Creating your safe space...
-        </p>
+      <div className="flex flex-col h-screen items-center justify-center bg-[#faf9f6] text-center p-6">
+        <div className="w-12 h-12 border-4 border-emerald-100 border-t-emerald-600 rounded-full animate-spin"></div>
+        <p className="mt-4 text-emerald-800 font-serif italic">Preparing your sanctuary...</p>
       </div>
     );
   }
@@ -272,7 +275,7 @@ const App: React.FC = () => {
                     </div>
                     <div>
                       <h2 className="text-xl font-serif font-bold text-slate-800 tracking-tight">{selectedJournal.title}</h2>
-                      <p className="text-[10px] uppercase tracking-widest text-emerald-600 font-bold">Encrypted Handoff Log</p>
+                      <p className="text-[10px] uppercase tracking-widest text-emerald-600 font-bold">Encrypted Archive</p>
                     </div>
                   </div>
                   <div className={`px-4 py-1.5 rounded-full text-[10px] font-bold tracking-widest uppercase ${
@@ -280,15 +283,11 @@ const App: React.FC = () => {
                     selectedJournal.mentalHealth === 'NEUTRAL' ? 'bg-slate-100 text-slate-700' :
                     'bg-rose-100 text-rose-700'
                   }`}>
-                    Status: {selectedJournal.mentalHealth}
+                    {selectedJournal.mentalHealth}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Session ID</p>
-                    <p className="text-xs font-mono text-slate-600 truncate">{selectedJournal.sessionId}</p>
-                  </div>
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Keywords</p>
                     <div className="flex flex-wrap gap-1">
@@ -298,36 +297,31 @@ const App: React.FC = () => {
                     </div>
                   </div>
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Started</p>
-                    <p className="text-xs text-slate-600">{new Date(selectedJournal.startTime).toLocaleString()}</p>
-                  </div>
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Ended</p>
-                    <p className="text-xs text-slate-600">{new Date(selectedJournal.endTime).toLocaleString()}</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Duration</p>
+                    <p className="text-[10px] text-slate-600">{new Date(selectedJournal.startTime).toLocaleTimeString()} - {new Date(selectedJournal.endTime).toLocaleTimeString()}</p>
                   </div>
                 </div>
 
                 <div className="space-y-6">
                   <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100">
-                    <h3 className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-4">Integrity Proofs</h3>
+                    <h3 className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-4">Integrity Hashes</h3>
                     <div className="space-y-4">
                       <div>
                         <p className="text-[9px] text-slate-400 font-mono mb-1">IPFS CID</p>
                         <p className="text-[10px] text-emerald-700 break-all font-mono bg-white p-3 rounded-xl border border-emerald-100/50">{selectedJournal.ipfs_cid}</p>
                       </div>
                       <div>
-                        <p className="text-[9px] text-slate-400 font-mono mb-1">Blockchain Transaction Hash</p>
+                        <p className="text-[9px] text-slate-400 font-mono mb-1">TX HASH</p>
                         <p className="text-[10px] text-emerald-700 break-all font-mono bg-white p-3 rounded-xl border border-emerald-100/50">{selectedJournal.blockchain_tx}</p>
                       </div>
                     </div>
                   </div>
-                  <p className="text-slate-400 text-[10px] text-center italic font-serif">Private summary generated for backend handoff only.</p>
                 </div>
               </div>
             ) : (
               <div className="space-y-4">
                 {messages.map((msg) => (
-                  <MessageBubble key={msg.id} message={{ ...msg, timestamp: msg.timestamp }} />
+                  <MessageBubble key={msg.id} message={msg} />
                 ))}
                 
                 {isLoading && (
@@ -346,7 +340,7 @@ const App: React.FC = () => {
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                       </svg>
-                      <span>Locked Historical Record</span>
+                      <span>Archived</span>
                     </div>
                   </div>
                 )}
@@ -369,7 +363,7 @@ const App: React.FC = () => {
                 disabled={isReadOnly || isLoading}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
-                placeholder={isReadOnly ? "Archived..." : "Reflect on your day..."}
+                placeholder={isReadOnly ? "Conversation archived..." : "How are you feeling?"}
                 rows={1}
                 className={`w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 pr-16 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-300 transition-all resize-none shadow-sm text-slate-700 ${isReadOnly ? 'bg-slate-50 cursor-not-allowed text-slate-400' : ''}`}
                 style={{ minHeight: '56px', maxHeight: '150px' }}
