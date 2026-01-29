@@ -1,11 +1,12 @@
 
-import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { THERAPIST_SYSTEM_PROMPT, MODEL_NAME } from "../constants";
 import { Message } from "../types";
 
 class GeminiService {
   private getClient() {
-    return new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    // Fix: Initialize GoogleGenAI with a named parameter using process.env.API_KEY directly as per guidelines
+    return new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
 
   public async sendMessage(message: string, history: Message[]): Promise<string> {
@@ -13,7 +14,7 @@ class GeminiService {
     
     const geminiHistory = history
       .map(m => ({
-        role: m.role === 'assistant' ? 'model' : 'user' as any,
+        role: (m.role === 'assistant' ? 'model' : 'user') as any,
         parts: [{ text: m.content }]
       }));
 
@@ -27,6 +28,7 @@ class GeminiService {
     });
 
     try {
+      // Fix: Access response.text as a property, not a method
       const response: GenerateContentResponse = await chat.sendMessage({ message });
       return response.text || "I'm listening. Please, continue.";
     } catch (error) {
@@ -61,6 +63,7 @@ class GeminiService {
     ${userInputs}`;
 
     try {
+      // Fix: Use ai.models.generateContent with model and contents together
       const response = await ai.models.generateContent({
         model: MODEL_NAME,
         contents: prompt,

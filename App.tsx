@@ -15,12 +15,13 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [selectedJournal, setSelectedJournal] = useState<JournalFile | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Background Summary Function
-  const triggerAutoSummary = async (session: ChatSession) => {
+  const triggerAutoSummary = useCallback(async (session: ChatSession) => {
     const hasUserMessages = session.messages.some(m => m.role === 'user');
     const alreadySummarized = journalFiles.some(j => j.sessionId === session.id);
     
@@ -41,14 +42,66 @@ const App: React.FC = () => {
         console.error("Silent summary failed", e);
       }
     }
-  };
+  }, [journalFiles]);
 
-  const lockSession = (id: string) => {
+  const lockSession = useCallback((id: string) => {
     setSessions(prev => prev.map(s => s.id === id ? { ...s, isLocked: true } : s));
-  };
+  }, []);
+
+  // Initial load logic: Always start a NEW session on mount
+  useEffect(() => {
+    const savedSessionsStr = localStorage.getItem('serenity_sessions');
+    const savedJournalsStr = localStorage.getItem('serenity_journals');
+    
+    let historicalSessions: ChatSession[] = [];
+    let historicalJournals: JournalFile[] = [];
+
+    if (savedSessionsStr) {
+      try {
+        const parsed = JSON.parse(savedSessionsStr);
+        // All loaded sessions from history must be locked
+        historicalSessions = parsed.map((s: ChatSession) => ({ ...s, isLocked: true }));
+      } catch (e) { console.error("Error loading sessions history"); }
+    }
+
+    if (savedJournalsStr) {
+      try {
+        historicalJournals = JSON.parse(savedJournalsStr);
+      } catch (e) { console.error("Error loading journals"); }
+    }
+
+    // MANDATORY: Always start a new session on open
+    const id = Date.now().toString();
+    const freshSession: ChatSession = {
+      id,
+      title: 'New Reflection',
+      messages: [
+        {
+          id: 'initial-' + id,
+          role: 'assistant',
+          content: 'How is your day going today?',
+          timestamp: new Date().toISOString(),
+        }
+      ],
+      updatedAt: new Date().toISOString(),
+      isLocked: false,
+    };
+
+    setSessions([freshSession, ...historicalSessions]);
+    setJournalFiles(historicalJournals);
+    setActiveSessionId(id);
+    setIsInitialized(true);
+  }, []);
+
+  // Persistence: Only save AFTER initialization to avoid wiping storage
+  useEffect(() => {
+    if (isInitialized) {
+      localStorage.setItem('serenity_sessions', JSON.stringify(sessions));
+      localStorage.setItem('serenity_journals', JSON.stringify(journalFiles));
+    }
+  }, [sessions, journalFiles, isInitialized]);
 
   const startNewChat = useCallback(() => {
-    // Before starting new, check if we need to summarize current
     const currentActive = sessions.find(s => s.id === activeSessionId);
     if (currentActive && !currentActive.isLocked) {
       triggerAutoSummary(currentActive);
@@ -74,56 +127,7 @@ const App: React.FC = () => {
     setActiveSessionId(id);
     setIsSidebarOpen(false);
     setSelectedJournal(null);
-  }, [activeSessionId, sessions, journalFiles]);
-
-  // Initial load logic: Always start a NEW session on mount
-  useEffect(() => {
-    const savedSessions = localStorage.getItem('serenity_sessions');
-    const savedJournals = localStorage.getItem('serenity_journals');
-    
-    if (savedSessions) {
-      try {
-        const parsed = JSON.parse(savedSessions);
-        // All loaded sessions from history must be locked
-        const lockedHistory = parsed.map((s: ChatSession) => ({ ...s, isLocked: true }));
-        setSessions(lockedHistory);
-      } catch (e) { console.error("Error loading sessions history"); }
-    }
-
-    if (savedJournals) {
-      try {
-        setJournalFiles(JSON.parse(savedJournals));
-      } catch (e) { console.error("Error loading journals"); }
-    }
-
-    // MANDATORY: Always start a new session on open
-    const id = Date.now().toString();
-    const freshSession: ChatSession = {
-      id,
-      title: 'New Reflection',
-      messages: [
-        {
-          id: 'initial-' + id,
-          role: 'assistant',
-          content: 'How is your day going today?',
-          timestamp: new Date().toISOString(),
-        }
-      ],
-      updatedAt: new Date().toISOString(),
-      isLocked: false,
-    };
-    setSessions(prev => [freshSession, ...prev]);
-    setActiveSessionId(id);
-  }, []); // Run once on mount
-
-  useEffect(() => {
-    localStorage.setItem('serenity_sessions', JSON.stringify(sessions));
-    localStorage.setItem('serenity_journals', JSON.stringify(journalFiles));
-  }, [sessions, journalFiles]);
-
-  const activeSession = sessions.find(s => s.id === activeSessionId);
-  const messages = activeSession?.messages || [];
-  const isReadOnly = activeSession?.isLocked || false;
+  }, [activeSessionId, sessions, triggerAutoSummary, lockSession]);
 
   const handleSwitchSession = (id: string) => {
     const currentActive = sessions.find(s => s.id === activeSessionId);
@@ -142,8 +146,17 @@ const App: React.FC = () => {
     if (activeSessionId === id) setActiveSessionId(null);
   };
 
+  const deleteJournal = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setJournalFiles(prev => prev.filter(j => j.id !== id));
+    if (selectedJournal?.id === id) setSelectedJournal(null);
+  };
+
   const handleSend = async () => {
-    if (!inputText.trim() || isLoading || !activeSessionId || isReadOnly) return;
+    if (!inputText.trim() || isLoading || !activeSessionId) return;
+
+    const session = sessions.find(s => s.id === activeSessionId);
+    if (!session || session.isLocked) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -165,7 +178,7 @@ const App: React.FC = () => {
       return s;
     }));
 
-    const currentHistory = [...messages];
+    const currentHistory = [...session.messages];
     setInputText('');
     setIsLoading(true);
     setError(null);
@@ -192,7 +205,17 @@ const App: React.FC = () => {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [activeSessionId, sessions]);
+
+  if (!isInitialized) {
+    return <div className="flex h-screen items-center justify-center bg-[#faf9f6]">
+      <div className="animate-pulse text-emerald-600 font-serif italic">Preparing your safe space...</div>
+    </div>;
+  }
+
+  const activeSession = sessions.find(s => s.id === activeSessionId);
+  const messages = activeSession?.messages || [];
+  const isReadOnly = activeSession?.isLocked || false;
 
   return (
     <div className="flex min-h-screen bg-[#faf9f6]">
@@ -210,11 +233,7 @@ const App: React.FC = () => {
           setIsSidebarOpen(false);
         }}
         onDeleteSession={deleteSession}
-        onDeleteJournal={(id, e) => {
-          e.stopPropagation();
-          setJournalFiles(prev => prev.filter(j => j.id !== id));
-          if (selectedJournal?.id === id) setSelectedJournal(null);
-        }}
+        onDeleteJournal={deleteJournal}
       />
 
       <div className="flex flex-col flex-grow md:ml-72 transition-all duration-300">
@@ -259,7 +278,7 @@ const App: React.FC = () => {
 
                 {isReadOnly && messages.length > 0 && (
                   <div className="text-center py-8">
-                    <div className="inline-flex items-center space-x-2 px-4 py-2 bg-slate-100 rounded-full text-slate-400 text-xs font-medium">
+                    <div className="inline-flex items-center space-x-2 px-4 py-2 bg-slate-100 rounded-full text-slate-400 text-xs font-medium border border-slate-200 shadow-sm">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                       </svg>

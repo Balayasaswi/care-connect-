@@ -8,6 +8,8 @@ interface MessageBubbleProps {
 
 const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   const isAssistant = message.role === 'assistant';
+  // Fix: Convert timestamp (string | Date) to a Date object to safely call toLocaleTimeString
+  const displayDate = message.timestamp instanceof Date ? message.timestamp : new Date(message.timestamp);
 
   return (
     <div className={`flex w-full mb-6 ${isAssistant ? 'justify-start' : 'justify-end'}`}>
@@ -26,7 +28,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
             isAssistant ? 'text-slate-400' : 'text-emerald-100'
           }`}
         >
-          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {displayDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </div>
       </div>
     </div>
