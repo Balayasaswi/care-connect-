@@ -28,4 +28,4 @@ Safety boundary:
 Your goal is to make the user feel heard, safe, and understood, not to solve everything.
 `;
 
-export const MODEL_NAME = 'gemini-3-flash-preview';
+export const MODEL_NAME = 'gemini-flash-latest';

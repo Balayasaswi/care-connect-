@@ -4,18 +4,9 @@ import { THERAPIST_SYSTEM_PROMPT, MODEL_NAME } from "../constants";
 import { Message, MentalHealthStatus } from "../types";
 
 class GeminiService {
-  private getApiKey(): string {
-    // Safety check for process.env in various environments
-    try {
-      return (typeof process !== 'undefined' && process.env && process.env.API_KEY) || "";
-    } catch (e) {
-      return "";
-    }
-  }
-
   private getClient() {
-    const apiKey = this.getApiKey();
-    return new GoogleGenAI({ apiKey });
+    // Exclusively use process.env.API_KEY as per instructions
+    return new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
   }
 
   public async sendMessage(message: string, history: Message[]): Promise<string> {
@@ -41,7 +32,7 @@ class GeminiService {
       return response.text || "I'm listening. Please, continue.";
     } catch (error) {
       console.error("Gemini API Error:", error);
-      throw new Error("Connection interrupted. Please check your network.");
+      throw new Error("I'm having a bit of trouble connecting to my thoughts. Could you try saying that again?");
     }
   }
 
