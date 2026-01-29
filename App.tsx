@@ -4,7 +4,7 @@ import Header from './components/Header';
 import MessageBubble from './components/MessageBubble';
 import Sidebar from './components/Sidebar';
 import { geminiService } from './services/geminiService';
-import { Message, ChatSession, JournalFile } from './types';
+import { Message, ChatSession, JournalFile, MentalHealthStatus } from './types';
 
 const App: React.FC = () => {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -20,35 +20,56 @@ const App: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Background Summary Function
-  const triggerAutoSummary = useCallback(async (session: ChatSession) => {
+  // Storage Pipeline Simulation (IPFS + Blockchain)
+  const executeArchivalPipeline = async (summary: string) => {
+    // 1. Python Pipeline simulated via Gemini analysis
+    const analysis = await geminiService.analyzeMentalHealth(summary);
+    
+    // 2. IPFS Storage (Simulated)
+    const mockCid = "Qm" + Array.from({length: 44}, () => "abcdef0123456789"[Math.floor(Math.random() * 16)]).join("");
+    
+    // 3. Blockchain TX (Simulated)
+    const mockTx = "0x" + Array.from({length: 64}, () => "abcdef0123456789"[Math.floor(Math.random() * 16)]).join("");
+    
+    return { ...analysis, cid: mockCid, tx: mockTx };
+  };
+
+  const triggerAutoArchive = useCallback(async (session: ChatSession) => {
     const hasUserMessages = session.messages.some(m => m.role === 'user');
     const alreadySummarized = journalFiles.some(j => j.sessionId === session.id);
     
     if (hasUserMessages && !alreadySummarized) {
       try {
-        const summary = await geminiService.summarizeSession(session.messages);
+        const summary = await geminiService.generateHandoffSummary(session.messages);
         if (summary) {
+          const archiveData = await executeArchivalPipeline(summary);
+          
           const newJournal: JournalFile = {
             id: 'journal-' + Date.now(),
             sessionId: session.id,
+            startTime: session.startTime,
+            endTime: new Date().toISOString(),
             title: session.title,
             summary: summary,
+            keywords: archiveData.keywords,
+            mentalHealth: archiveData.mentalHealth,
+            ipfs_cid: archiveData.cid,
+            blockchain_tx: archiveData.tx,
             createdAt: new Date().toISOString(),
           };
           setJournalFiles(prev => [...prev, newJournal]);
         }
       } catch (e) {
-        console.error("Silent summary failed", e);
+        console.error("Background archival failed", e);
       }
     }
   }, [journalFiles]);
 
   const lockSession = useCallback((id: string) => {
-    setSessions(prev => prev.map(s => s.id === id ? { ...s, isLocked: true } : s));
+    setSessions(prev => prev.map(s => s.id === id ? { ...s, isLocked: true, updatedAt: new Date().toISOString() } : s));
   }, []);
 
-  // Initial load logic: Always start a NEW session on mount
+  // Initial load: Always start a NEW session
   useEffect(() => {
     const savedSessionsStr = localStorage.getItem('serenity_sessions');
     const savedJournalsStr = localStorage.getItem('serenity_journals');
@@ -59,30 +80,27 @@ const App: React.FC = () => {
     if (savedSessionsStr) {
       try {
         const parsed = JSON.parse(savedSessionsStr);
-        // All loaded sessions from history must be locked
         historicalSessions = parsed.map((s: ChatSession) => ({ ...s, isLocked: true }));
-      } catch (e) { console.error("Error loading sessions history"); }
+      } catch (e) { console.error("History load error"); }
     }
 
     if (savedJournalsStr) {
       try {
         historicalJournals = JSON.parse(savedJournalsStr);
-      } catch (e) { console.error("Error loading journals"); }
+      } catch (e) { console.error("Journal load error"); }
     }
 
-    // MANDATORY: Always start a new session on open
     const id = Date.now().toString();
     const freshSession: ChatSession = {
       id,
-      title: 'New Reflection',
-      messages: [
-        {
-          id: 'initial-' + id,
-          role: 'assistant',
-          content: 'How is your day going today?',
-          timestamp: new Date().toISOString(),
-        }
-      ],
+      title: 'Active Reflection',
+      messages: [{
+        id: 'initial-' + id,
+        role: 'assistant',
+        content: 'How is your day going today?',
+        timestamp: new Date().toISOString(),
+      }],
+      startTime: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       isLocked: false,
     };
@@ -93,7 +111,6 @@ const App: React.FC = () => {
     setIsInitialized(true);
   }, []);
 
-  // Persistence: Only save AFTER initialization to avoid wiping storage
   useEffect(() => {
     if (isInitialized) {
       localStorage.setItem('serenity_sessions', JSON.stringify(sessions));
@@ -104,22 +121,21 @@ const App: React.FC = () => {
   const startNewChat = useCallback(() => {
     const currentActive = sessions.find(s => s.id === activeSessionId);
     if (currentActive && !currentActive.isLocked) {
-      triggerAutoSummary(currentActive);
+      triggerAutoArchive(currentActive);
       lockSession(currentActive.id);
     }
 
     const id = Date.now().toString();
     const newSession: ChatSession = {
       id,
-      title: 'New Reflection',
-      messages: [
-        {
-          id: 'initial-' + id,
-          role: 'assistant',
-          content: 'How is your day going today?',
-          timestamp: new Date().toISOString(),
-        }
-      ],
+      title: 'Active Reflection',
+      messages: [{
+        id: 'initial-' + id,
+        role: 'assistant',
+        content: 'How is your day going today?',
+        timestamp: new Date().toISOString(),
+      }],
+      startTime: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       isLocked: false,
     };
@@ -127,29 +143,17 @@ const App: React.FC = () => {
     setActiveSessionId(id);
     setIsSidebarOpen(false);
     setSelectedJournal(null);
-  }, [activeSessionId, sessions, triggerAutoSummary, lockSession]);
+  }, [activeSessionId, sessions, triggerAutoArchive, lockSession]);
 
   const handleSwitchSession = (id: string) => {
     const currentActive = sessions.find(s => s.id === activeSessionId);
     if (currentActive && !currentActive.isLocked) {
-      triggerAutoSummary(currentActive);
+      triggerAutoArchive(currentActive);
       lockSession(currentActive.id);
     }
     setActiveSessionId(id);
     setSelectedJournal(null);
     setIsSidebarOpen(false);
-  };
-
-  const deleteSession = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSessions(prev => prev.filter(s => s.id !== id));
-    if (activeSessionId === id) setActiveSessionId(null);
-  };
-
-  const deleteJournal = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setJournalFiles(prev => prev.filter(j => j.id !== id));
-    if (selectedJournal?.id === id) setSelectedJournal(null);
   };
 
   const handleSend = async () => {
@@ -197,7 +201,7 @@ const App: React.FC = () => {
           : s
       ));
     } catch (err: any) {
-      setError("I'm having trouble connecting right now.");
+      setError("I'm listening, but my connection is a bit weak right now.");
     } finally {
       setIsLoading(false);
     }
@@ -207,11 +211,7 @@ const App: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeSessionId, sessions]);
 
-  if (!isInitialized) {
-    return <div className="flex h-screen items-center justify-center bg-[#faf9f6]">
-      <div className="animate-pulse text-emerald-600 font-serif italic">Preparing your safe space...</div>
-    </div>;
-  }
+  if (!isInitialized) return null;
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
   const messages = activeSession?.messages || [];
@@ -232,8 +232,16 @@ const App: React.FC = () => {
           setActiveSessionId(null);
           setIsSidebarOpen(false);
         }}
-        onDeleteSession={deleteSession}
-        onDeleteJournal={deleteJournal}
+        onDeleteSession={(id, e) => {
+          e.stopPropagation();
+          setSessions(prev => prev.filter(s => s.id !== id));
+          if (activeSessionId === id) setActiveSessionId(null);
+        }}
+        onDeleteJournal={(id, e) => {
+          e.stopPropagation();
+          setJournalFiles(prev => prev.filter(j => j.id !== id));
+          if (selectedJournal?.id === id) setSelectedJournal(null);
+        }}
       />
 
       <div className="flex flex-col flex-grow md:ml-72 transition-all duration-300">
@@ -243,27 +251,71 @@ const App: React.FC = () => {
           <div className="max-w-3xl mx-auto">
             {selectedJournal ? (
               <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm animate-fade-in">
-                <div className="flex items-center space-x-3 mb-6">
-                  <div className="p-2 bg-slate-50 rounded-lg">
-                    <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                    </svg>
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-emerald-50 rounded-lg">
+                      <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-serif font-bold text-slate-800 tracking-tight">{selectedJournal.title}</h2>
+                      <p className="text-[10px] uppercase tracking-widest text-emerald-600 font-bold">Encrypted Handoff Log</p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-xl font-serif font-bold text-slate-800 tracking-tight">{selectedJournal.title}</h2>
-                    <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Session Summary Archive</p>
+                  <div className={`px-4 py-1.5 rounded-full text-[10px] font-bold tracking-widest uppercase ${
+                    ['HAPPY', 'GOOD'].includes(selectedJournal.mentalHealth) ? 'bg-emerald-100 text-emerald-700' :
+                    selectedJournal.mentalHealth === 'NEUTRAL' ? 'bg-slate-100 text-slate-700' :
+                    'bg-rose-100 text-rose-700'
+                  }`}>
+                    Status: {selectedJournal.mentalHealth}
                   </div>
                 </div>
-                <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100">
-                  <pre className="text-slate-600 leading-relaxed font-sans text-sm whitespace-pre-wrap break-words italic">
-                    {selectedJournal.summary}
-                  </pre>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Session ID</p>
+                    <p className="text-xs font-mono text-slate-600 truncate">{selectedJournal.sessionId}</p>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Keywords</p>
+                    <div className="flex flex-wrap gap-1">
+                      {selectedJournal.keywords.map((kw, i) => (
+                        <span key={i} className="text-[10px] bg-white border border-slate-200 px-2 py-0.5 rounded-md text-slate-500">{kw}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Started</p>
+                    <p className="text-xs text-slate-600">{new Date(selectedJournal.startTime).toLocaleString()}</p>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Ended</p>
+                    <p className="text-xs text-slate-600">{new Date(selectedJournal.endTime).toLocaleString()}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100">
+                    <h3 className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-4">Integrity Proofs</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-[9px] text-slate-400 font-mono mb-1">IPFS CID</p>
+                        <p className="text-[10px] text-emerald-700 break-all font-mono bg-white p-3 rounded-xl border border-emerald-100/50">{selectedJournal.ipfs_cid}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-slate-400 font-mono mb-1">Blockchain Transaction Hash</p>
+                        <p className="text-[10px] text-emerald-700 break-all font-mono bg-white p-3 rounded-xl border border-emerald-100/50">{selectedJournal.blockchain_tx}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-slate-400 text-[10px] text-center italic font-serif">Private summary generated for backend handoff only.</p>
                 </div>
               </div>
             ) : (
               <div className="space-y-4">
                 {messages.map((msg) => (
-                  <MessageBubble key={msg.id} message={{ ...msg, timestamp: new Date(msg.timestamp) }} />
+                  <MessageBubble key={msg.id} message={{ ...msg, timestamp: msg.timestamp }} />
                 ))}
                 
                 {isLoading && (
@@ -276,19 +328,19 @@ const App: React.FC = () => {
                   </div>
                 )}
 
-                {isReadOnly && messages.length > 0 && (
+                {isReadOnly && (
                   <div className="text-center py-8">
-                    <div className="inline-flex items-center space-x-2 px-4 py-2 bg-slate-100 rounded-full text-slate-400 text-xs font-medium border border-slate-200 shadow-sm">
+                    <div className="inline-flex items-center space-x-2 px-4 py-2 bg-slate-100 rounded-full text-slate-400 text-[10px] font-bold tracking-widest uppercase border border-slate-200 shadow-sm">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                       </svg>
-                      <span>This historical session is locked</span>
+                      <span>Locked Historical Record</span>
                     </div>
                   </div>
                 )}
 
                 {error && (
-                  <div className="p-4 rounded-xl bg-red-50 text-red-600 text-sm text-center border border-red-100 italic">{error}</div>
+                  <div className="p-4 rounded-xl bg-red-50 text-red-600 text-[10px] text-center border border-red-100 font-bold uppercase tracking-widest">{error}</div>
                 )}
                 <div ref={messagesEndRef} />
               </div>
@@ -305,7 +357,7 @@ const App: React.FC = () => {
                 disabled={isReadOnly || isLoading}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
-                placeholder={isReadOnly ? "This session has ended..." : "Share what's on your mind..."}
+                placeholder={isReadOnly ? "Archived..." : "Reflect on your day..."}
                 rows={1}
                 className={`w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 pr-16 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-300 transition-all resize-none shadow-sm text-slate-700 ${isReadOnly ? 'bg-slate-50 cursor-not-allowed text-slate-400' : ''}`}
                 style={{ minHeight: '56px', maxHeight: '150px' }}

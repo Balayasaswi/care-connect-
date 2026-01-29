@@ -1,33 +1,33 @@
 
 export type Role = 'user' | 'assistant';
+export type MentalHealthStatus = 'HAPPY' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'CRITICAL';
 
 export interface Message {
   id: string;
   role: Role;
   content: string;
-  timestamp: Date | string;
+  timestamp: string;
 }
 
 export interface ChatSession {
   id: string;
   title: string;
   messages: Message[];
-  updatedAt: Date | string;
-  isLocked: boolean; // Historical sessions are locked
+  startTime: string;
+  updatedAt: string;
+  isLocked: boolean;
 }
 
 export interface JournalFile {
   id: string;
   sessionId: string;
+  startTime: string;
+  endTime: string;
   title: string;
   summary: string;
-  createdAt: Date | string;
-}
-
-export interface ChatState {
-  sessions: ChatSession[];
-  activeSessionId: string | null;
-  journalFiles: JournalFile[];
-  isLoading: boolean;
-  error: string | null;
+  keywords: string[];
+  mentalHealth: MentalHealthStatus;
+  ipfs_cid: string;
+  blockchain_tx: string;
+  createdAt: string;
 }
