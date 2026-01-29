@@ -33,13 +33,17 @@
         .animate-fade-in {
             animation: fadeIn 0.5s ease-out forwards;
         }
-    </style>
-    <script>
-        // Critical shim for environments that don't provide 'process'
-        if (typeof window.process === 'undefined') {
-            window.process = { env: { API_KEY: '' } };
+        /* Typing cursor effect */
+        .typing-cursor::after {
+            content: '|';
+            animation: blink 1s step-start infinite;
+            margin-left: 2px;
+            color: #10b981;
         }
-    </script>
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+    </style>
     <script type="importmap">
 {
   "imports": {

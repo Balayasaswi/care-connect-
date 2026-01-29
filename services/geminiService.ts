@@ -1,10 +1,13 @@
-import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
+import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { THERAPIST_SYSTEM_PROMPT, MODEL_NAME } from "../constants";
 import { Message, MentalHealthStatus } from "../types";
 
 class GeminiService {
   private getClient() {
-    const apiKey = process.env.API_KEY || '';
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      throw new Error("API_KEY_NOT_FOUND");
+    }
     return new GoogleGenAI({ apiKey });
   }
 
@@ -12,22 +15,24 @@ class GeminiService {
     try {
       const ai = this.getClient();
       
+      // Convert our history format to Gemini's history format
+      // Note: We exclude the very last message if it was just added to the state 
+      // because we pass the 'message' separately to sendMessageStream
       const geminiHistory = history.map(m => ({
-        role: (m.role === 'assistant' ? 'model' : 'user') as any,
+        role: (m.role === 'assistant' ? 'model' : 'user') as "user" | "model",
         parts: [{ text: m.content }]
       }));
 
-      const responseStream = await ai.models.generateContentStream({
+      const chat = ai.chats.create({
         model: MODEL_NAME,
-        contents: [
-          ...geminiHistory,
-          { role: 'user', parts: [{ text: message }] }
-        ],
         config: {
           systemInstruction: THERAPIST_SYSTEM_PROMPT,
           temperature: 0.7,
         },
+        history: geminiHistory,
       });
+
+      const responseStream = await chat.sendMessageStream({ message });
 
       for await (const chunk of responseStream) {
         const text = chunk.text;
@@ -37,6 +42,9 @@ class GeminiService {
       }
     } catch (error: any) {
       console.error("Gemini Streaming Error:", error);
+      if (error.message === "API_KEY_NOT_FOUND") {
+        throw new Error("API Key is missing from the environment.");
+      }
       throw error;
     }
   }
@@ -55,7 +63,7 @@ class GeminiService {
         model: MODEL_NAME,
         contents: `Summarize these user thoughts in 2-4 sentences, focusing on emotional tone. Avoid markdown. Thoughts: ${userInputs}`,
       });
-      return response.text?.trim() || "";
+      return response.text || "";
     } catch (error) {
       return "";
     }
@@ -74,7 +82,7 @@ class GeminiService {
             properties: {
               mentalHealth: { 
                 type: Type.STRING,
-                description: "One of: HAPPY, GOOD, NEUTRAL, BAD, CRITICAL"
+                description: "One of: HAPPY, GOOD, NEUTRAL, BAD, or CRITICAL"
               },
               keywords: { 
                 type: Type.ARRAY, 
@@ -86,9 +94,9 @@ class GeminiService {
         }
       });
 
-      const data = JSON.parse(response.text);
+      const data = JSON.parse(response.text || "{}");
       return {
-        mentalHealth: (data.mentalHealth.toUpperCase() as MentalHealthStatus) || "NEUTRAL",
+        mentalHealth: (data.mentalHealth?.toUpperCase() as MentalHealthStatus) || "NEUTRAL",
         keywords: (data.keywords || []).slice(0, 4)
       };
     } catch (e) {

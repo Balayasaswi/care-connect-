@@ -11,6 +11,7 @@ const App: React.FC = () => {
   const [journalFiles, setJournalFiles] = useState<JournalFile[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [selectedJournal, setSelectedJournal] = useState<JournalFile | null>(null);
@@ -164,7 +165,7 @@ const App: React.FC = () => {
   };
 
   const handleSend = async () => {
-    if (!inputText.trim() || isLoading || !activeSessionId) return;
+    if (!inputText.trim() || isLoading || isStreaming || !activeSessionId) return;
 
     const session = sessions.find(s => s.id === activeSessionId);
     if (!session || session.isLocked) return;
@@ -176,12 +177,15 @@ const App: React.FC = () => {
       timestamp: new Date().toISOString(),
     };
 
+    // Update history before sending
+    const currentHistory = [...session.messages];
+
     setSessions(prev => prev.map(s => {
       if (s.id === activeSessionId) {
         const isFirstUserMessage = !s.messages.some(m => m.role === 'user');
         return {
           ...s,
-          title: isFirstUserMessage ? userMessage.content.slice(0, 30) : s.title,
+          title: isFirstUserMessage ? userMessage.content.slice(0, 30) + (userMessage.content.length > 30 ? '...' : '') : s.title,
           messages: [...s.messages, userMessage],
           updatedAt: new Date().toISOString()
         };
@@ -189,15 +193,13 @@ const App: React.FC = () => {
       return s;
     }));
 
-    const currentHistory = [...session.messages];
     const assistantId = (Date.now() + 1).toString();
-    
     setInputText('');
     setIsLoading(true);
     setError(null);
 
     try {
-      // 1. Create a placeholder assistant message
+      // 1. Prepare assistant message placeholder
       const assistantPlaceholder: Message = {
         id: assistantId,
         role: 'assistant',
@@ -211,15 +213,15 @@ const App: React.FC = () => {
           : s
       ));
 
-      // 2. Start streaming
+      // 2. Begin streaming
+      setIsStreaming(true);
       const stream = geminiService.sendMessageStream(userMessage.content, currentHistory);
       
       let fullContent = '';
       for await (const chunk of stream) {
-        fullContent += chunk;
-        // Turn off loading once first chunk arrives
-        setIsLoading(false);
+        if (isLoading) setIsLoading(false); // Stop generic loading spinner once first token arrives
         
+        fullContent += chunk;
         setSessions(prev => prev.map(s => 
           s.id === activeSessionId 
             ? {
@@ -232,11 +234,12 @@ const App: React.FC = () => {
             : s
         ));
       }
-
     } catch (err: any) {
       console.error(err);
       setError(`Notice: ${err.message || 'The connection was interrupted. Please try again.'}`);
+    } finally {
       setIsLoading(false);
+      setIsStreaming(false);
     }
   };
 
@@ -345,8 +348,12 @@ const App: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                {messages.map((msg) => (
-                  <MessageBubble key={msg.id} message={msg} />
+                {messages.map((msg, index) => (
+                  <MessageBubble 
+                    key={msg.id} 
+                    message={msg} 
+                    isStreaming={isStreaming && index === messages.length - 1 && msg.role === 'assistant'}
+                  />
                 ))}
                 
                 {isLoading && (
@@ -371,7 +378,7 @@ const App: React.FC = () => {
                 )}
 
                 {error && (
-                  <div className="p-4 rounded-xl bg-red-50 text-red-600 text-xs text-center border border-red-100 font-medium">
+                  <div className="p-4 rounded-xl bg-red-50 text-red-600 text-xs text-center border border-red-100 font-medium animate-fade-in">
                     {error}
                   </div>
                 )}
@@ -387,18 +394,18 @@ const App: React.FC = () => {
               <textarea
                 ref={inputRef}
                 value={inputText}
-                disabled={isReadOnly || isLoading}
+                disabled={isReadOnly || isLoading || isStreaming}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
-                placeholder={isReadOnly ? "Conversation archived..." : "How are you feeling?"}
+                placeholder={isReadOnly ? "Conversation archived..." : (isStreaming ? "Wait for response..." : "How are you feeling?")}
                 rows={1}
-                className={`w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 pr-16 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-300 transition-all resize-none shadow-sm text-slate-700 ${isReadOnly ? 'bg-slate-50 cursor-not-allowed text-slate-400' : ''}`}
+                className={`w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 pr-16 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-300 transition-all resize-none shadow-sm text-slate-700 ${isReadOnly || isLoading || isStreaming ? 'bg-slate-50 cursor-not-allowed text-slate-400' : ''}`}
                 style={{ minHeight: '56px', maxHeight: '150px' }}
               />
               <button
                 onClick={handleSend}
-                disabled={!inputText.trim() || isLoading || isReadOnly}
-                className={`absolute right-3 bottom-3 p-2 rounded-xl transition-all ${inputText.trim() && !isLoading && !isReadOnly ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-100 text-slate-300'}`}
+                disabled={!inputText.trim() || isLoading || isStreaming || isReadOnly}
+                className={`absolute right-3 bottom-3 p-2 rounded-xl transition-all ${inputText.trim() && !isLoading && !isStreaming && !isReadOnly ? 'bg-emerald-600 text-white shadow-md hover:bg-emerald-700' : 'bg-slate-100 text-slate-300'}`}
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
