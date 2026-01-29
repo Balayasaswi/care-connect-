@@ -20,17 +20,10 @@ const App: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Storage Pipeline Simulation (IPFS + Blockchain)
   const executeArchivalPipeline = async (summary: string) => {
-    // 1. Python Pipeline simulated via Gemini analysis
     const analysis = await geminiService.analyzeMentalHealth(summary);
-    
-    // 2. IPFS Storage (Simulated)
     const mockCid = "Qm" + Array.from({length: 44}, () => "abcdef0123456789"[Math.floor(Math.random() * 16)]).join("");
-    
-    // 3. Blockchain TX (Simulated)
     const mockTx = "0x" + Array.from({length: 64}, () => "abcdef0123456789"[Math.floor(Math.random() * 16)]).join("");
-    
     return { ...analysis, cid: mockCid, tx: mockTx };
   };
 
@@ -43,7 +36,6 @@ const App: React.FC = () => {
         const summary = await geminiService.generateHandoffSummary(session.messages);
         if (summary) {
           const archiveData = await executeArchivalPipeline(summary);
-          
           const newJournal: JournalFile = {
             id: 'journal-' + Date.now(),
             sessionId: session.id,
@@ -69,52 +61,59 @@ const App: React.FC = () => {
     setSessions(prev => prev.map(s => s.id === id ? { ...s, isLocked: true, updatedAt: new Date().toISOString() } : s));
   }, []);
 
-  // Initial load: Always start a NEW session
   useEffect(() => {
-    const savedSessionsStr = localStorage.getItem('serenity_sessions');
-    const savedJournalsStr = localStorage.getItem('serenity_journals');
-    
-    let historicalSessions: ChatSession[] = [];
-    let historicalJournals: JournalFile[] = [];
+    const initialize = async () => {
+      let historicalSessions: ChatSession[] = [];
+      let historicalJournals: JournalFile[] = [];
 
-    if (savedSessionsStr) {
       try {
-        const parsed = JSON.parse(savedSessionsStr);
-        historicalSessions = parsed.map((s: ChatSession) => ({ ...s, isLocked: true }));
-      } catch (e) { console.error("History load error"); }
-    }
+        const savedSessionsStr = localStorage.getItem('serenity_sessions');
+        const savedJournalsStr = localStorage.getItem('serenity_journals');
+        
+        if (savedSessionsStr) {
+          historicalSessions = JSON.parse(savedSessionsStr).map((s: ChatSession) => ({ ...s, isLocked: true }));
+        }
+        if (savedJournalsStr) {
+          historicalJournals = JSON.parse(savedJournalsStr);
+        }
+      } catch (e) {
+        console.error("History load error, starting fresh", e);
+      }
 
-    if (savedJournalsStr) {
-      try {
-        historicalJournals = JSON.parse(savedJournalsStr);
-      } catch (e) { console.error("Journal load error"); }
-    }
+      const id = Date.now().toString();
+      const freshSession: ChatSession = {
+        id,
+        title: 'Active Reflection',
+        messages: [{
+          id: 'initial-' + id,
+          role: 'assistant',
+          content: 'How is your day going today?',
+          timestamp: new Date().toISOString(),
+        }],
+        startTime: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        isLocked: false,
+      };
 
-    const id = Date.now().toString();
-    const freshSession: ChatSession = {
-      id,
-      title: 'Active Reflection',
-      messages: [{
-        id: 'initial-' + id,
-        role: 'assistant',
-        content: 'How is your day going today?',
-        timestamp: new Date().toISOString(),
-      }],
-      startTime: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      isLocked: false,
+      setSessions([freshSession, ...historicalSessions]);
+      setJournalFiles(historicalJournals);
+      setActiveSessionId(id);
+      
+      // Delay slightly for smooth transition
+      setTimeout(() => setIsInitialized(true), 800);
     };
 
-    setSessions([freshSession, ...historicalSessions]);
-    setJournalFiles(historicalJournals);
-    setActiveSessionId(id);
-    setIsInitialized(true);
+    initialize();
   }, []);
 
   useEffect(() => {
     if (isInitialized) {
-      localStorage.setItem('serenity_sessions', JSON.stringify(sessions));
-      localStorage.setItem('serenity_journals', JSON.stringify(journalFiles));
+      try {
+        localStorage.setItem('serenity_sessions', JSON.stringify(sessions));
+        localStorage.setItem('serenity_journals', JSON.stringify(journalFiles));
+      } catch (e) {
+        console.error("Save state error", e);
+      }
     }
   }, [sessions, journalFiles, isInitialized]);
 
@@ -201,7 +200,7 @@ const App: React.FC = () => {
           : s
       ));
     } catch (err: any) {
-      setError("I'm listening, but my connection is a bit weak right now.");
+      setError("I'm here, but the connection seems weak. Let's try again.");
     } finally {
       setIsLoading(false);
     }
@@ -211,7 +210,20 @@ const App: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeSessionId, sessions]);
 
-  if (!isInitialized) return null;
+  // Loading Screen
+  if (!isInitialized) {
+    return (
+      <div className="flex flex-col h-screen items-center justify-center bg-[#faf9f6]">
+        <div className="w-16 h-16 relative">
+          <div className="absolute inset-0 border-4 border-emerald-100 rounded-full"></div>
+          <div className="absolute inset-0 border-4 border-emerald-600 rounded-full border-t-transparent animate-spin"></div>
+        </div>
+        <p className="mt-6 text-emerald-800 font-serif italic tracking-wide animate-pulse">
+          Creating your safe space...
+        </p>
+      </div>
+    );
+  }
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
   const messages = activeSession?.messages || [];

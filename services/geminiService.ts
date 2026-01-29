@@ -4,8 +4,18 @@ import { THERAPIST_SYSTEM_PROMPT, MODEL_NAME } from "../constants";
 import { Message, MentalHealthStatus } from "../types";
 
 class GeminiService {
+  private getApiKey(): string {
+    // Safety check for process.env in various environments
+    try {
+      return (typeof process !== 'undefined' && process.env && process.env.API_KEY) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
   private getClient() {
-    return new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const apiKey = this.getApiKey();
+    return new GoogleGenAI({ apiKey });
   }
 
   public async sendMessage(message: string, history: Message[]): Promise<string> {
@@ -31,13 +41,10 @@ class GeminiService {
       return response.text || "I'm listening. Please, continue.";
     } catch (error) {
       console.error("Gemini API Error:", error);
-      throw new Error("Connection interrupted.");
+      throw new Error("Connection interrupted. Please check your network.");
     }
   }
 
-  /**
-   * Generates the clean 2-6 sentence summary for the handoff.
-   */
   public async generateHandoffSummary(messages: Message[]): Promise<string> {
     const ai = this.getClient();
     const userInputs = messages
@@ -54,7 +61,6 @@ class GeminiService {
     2. NO markdown, NO bullets, NO emojis.
     3. Length: 2–6 sentences only.
     4. Focus on: User emotional tone, intent, and positive/negative signals.
-    5. Do NOT add interpretation beyond what the user expressed.
 
     User messages:
     ${userInputs}`;
@@ -71,51 +77,47 @@ class GeminiService {
     }
   }
 
-  /**
-   * Mimics the Python sentiment analysis pipeline:
-   * 5-class sentiment (HAPPY, GOOD, NEUTRAL, BAD, CRITICAL)
-   * Keyword extraction (Integrated Gradients style)
-   */
   public async analyzeMentalHealth(summaryText: string): Promise<{ mentalHealth: MentalHealthStatus, keywords: string[] }> {
     const ai = this.getClient();
     
-    const response = await ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: `Analyze the following summary and provide sentiment analysis matching this specific pipeline:
-      
-      1. Mental Health Class: Choose exactly one from [CRITICAL, BAD, NEUTRAL, GOOD, HAPPY]
-         - HAPPY: High positive score (>0.75)
-         - GOOD: Moderate positive (0.55-0.75)
-         - NEUTRAL: Mid-range (0.35-0.55)
-         - BAD: Negative leaning (0.15-0.35)
-         - CRITICAL: High distress (<0.15)
-      
-      2. Keywords: Identify up to 4 key words that influenced this score.
-      
-      Return ONLY valid JSON with properties: "mentalHealth" and "keywords".
-
-      Summary to analyze:
-      ${summaryText}`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            mentalHealth: { type: Type.STRING },
-            keywords: { type: Type.ARRAY, items: { type: Type.STRING } }
-          },
-          required: ["mentalHealth", "keywords"]
-        }
-      }
-    });
-
     try {
+      const response = await ai.models.generateContent({
+        model: MODEL_NAME,
+        contents: `Analyze the following summary and provide sentiment analysis matching this specific pipeline:
+        
+        1. Mental Health Class: Choose exactly one from [CRITICAL, BAD, NEUTRAL, GOOD, HAPPY]
+           - HAPPY: High positive score (>0.75)
+           - GOOD: Moderate positive (0.55-0.75)
+           - NEUTRAL: Mid-range (0.35-0.55)
+           - BAD: Negative leaning (0.15-0.35)
+           - CRITICAL: High distress (<0.15)
+        
+        2. Keywords: Identify up to 4 key words that influenced this score.
+        
+        Return ONLY valid JSON with properties: "mentalHealth" and "keywords".
+
+        Summary to analyze:
+        ${summaryText}`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              mentalHealth: { type: Type.STRING },
+              keywords: { type: Type.ARRAY, items: { type: Type.STRING } }
+            },
+            required: ["mentalHealth", "keywords"]
+          }
+        }
+      });
+
       const data = JSON.parse(response.text);
       return {
         mentalHealth: (data.mentalHealth.toUpperCase() as MentalHealthStatus) || "NEUTRAL",
         keywords: (data.keywords || []).slice(0, 4)
       };
     } catch (e) {
+      console.error("Mental health analysis error:", e);
       return { mentalHealth: "NEUTRAL", keywords: [] };
     }
   }
