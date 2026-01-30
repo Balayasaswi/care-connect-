@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { ChatSession, JournalFile } from '../types';
 
@@ -13,6 +12,7 @@ interface SidebarProps {
   onNewChat: () => void;
   onDeleteSession: (id: string, e: React.MouseEvent) => void;
   onDeleteJournal: (id: string, e: React.MouseEvent) => void;
+  isArchiving?: boolean;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -26,6 +26,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onNewChat,
   onDeleteSession,
   onDeleteJournal,
+  isArchiving
 }) => {
   const activeSession = sessions.find(s => !s.isLocked && s.id === activeSessionId);
   const pastSessions = sessions.filter(s => s.isLocked);
@@ -43,7 +44,8 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex flex-col h-full p-4">
           <button
             onClick={onNewChat}
-            className="flex items-center space-x-3 w-full bg-white hover:bg-emerald-50 text-slate-700 font-medium px-4 py-3 rounded-xl border border-slate-200 transition-colors shadow-sm mb-6"
+            disabled={isArchiving}
+            className="flex items-center space-x-3 w-full bg-white hover:bg-emerald-50 text-slate-700 font-medium px-4 py-3 rounded-xl border border-slate-200 transition-colors shadow-sm mb-6 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -55,10 +57,19 @@ const Sidebar: React.FC<SidebarProps> = ({
             {/* Active Session */}
             {activeSession && (
               <div>
-                <h3 className="text-[10px] uppercase tracking-widest font-bold text-emerald-600 px-2 mb-2">Active Reflection</h3>
+                <h3 className="text-[10px] uppercase tracking-widest font-bold text-emerald-600 px-2 mb-2 flex items-center justify-between">
+                  <span>Active Reflection</span>
+                  {isArchiving && (
+                    <span className="flex space-x-0.5">
+                      <span className="w-1 h-1 bg-emerald-400 rounded-full animate-bounce"></span>
+                      <span className="w-1 h-1 bg-emerald-400 rounded-full animate-bounce [animation-delay:0.2s]"></span>
+                      <span className="w-1 h-1 bg-emerald-400 rounded-full animate-bounce [animation-delay:0.4s]"></span>
+                    </span>
+                  )}
+                </h3>
                 <div
-                  onClick={() => onSelectSession(activeSession.id)}
-                  className="flex items-center justify-between w-full px-3 py-2.5 rounded-lg cursor-pointer bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-sm"
+                  onClick={() => !isArchiving && onSelectSession(activeSession.id)}
+                  className={`flex items-center justify-between w-full px-3 py-2.5 rounded-lg cursor-pointer bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-sm ${isArchiving ? 'opacity-70 cursor-wait' : ''}`}
                 >
                   <div className="flex items-center space-x-3 overflow-hidden">
                     <svg className="w-4 h-4 flex-shrink-0 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -108,7 +119,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             {/* Journal Archive */}
             {journalFiles.length > 0 && (
               <div>
-                <h3 className="text-[10px] uppercase tracking-widest font-bold text-slate-400 px-2 mb-2">Journal Archive</h3>
+                <h3 className="text-[10px] uppercase tracking-widest font-bold text-slate-400 px-2 mb-2">Web3 Journals</h3>
                 <div className="space-y-1">
                   {journalFiles.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((file) => (
                     <div
@@ -117,10 +128,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                       className="group flex items-center justify-between w-full px-3 py-2 rounded-lg cursor-pointer hover:bg-white border border-transparent hover:border-slate-200 transition-all"
                     >
                       <div className="flex items-center space-x-3 overflow-hidden">
-                        <svg className="w-4 h-4 flex-shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <span className="text-xs font-medium truncate text-slate-500">{file.title} Summary</span>
+                        <div className={`w-1.5 h-1.5 rounded-full ${file.blockchain_tx.startsWith('0x') ? 'bg-emerald-400' : 'bg-slate-300'}`}></div>
+                        <span className="text-xs font-medium truncate text-slate-500">{file.title}</span>
                       </div>
                       <button
                         onClick={(e) => onDeleteJournal(file.id, e)}
@@ -138,7 +147,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           <div className="mt-auto pt-4 border-t border-slate-200">
-            <p className="text-[10px] text-slate-400 text-center italic font-serif">Every conversation is unique.</p>
+            <p className="text-[10px] text-slate-400 text-center italic font-serif">Encrypted by Design.</p>
           </div>
         </div>
       </aside>

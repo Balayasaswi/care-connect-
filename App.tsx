@@ -3,6 +3,8 @@ import Header from './components/Header';
 import MessageBubble from './components/MessageBubble';
 import Sidebar from './components/Sidebar';
 import { geminiService } from './services/geminiService';
+import { ipfsService } from './services/ipfsService';
+import { blockchainService } from './services/blockchainService';
 import { Message, ChatSession, JournalFile, MentalHealthStatus } from './types';
 
 const App: React.FC = () => {
@@ -12,23 +14,50 @@ const App: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [selectedJournal, setSelectedJournal] = useState<JournalFile | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const executeArchivalPipeline = async (summary: string) => {
+  const handleConnectWallet = async () => {
+    const address = await blockchainService.connectWallet();
+    if (address) setWalletAddress(address);
+  };
+
+  const executeArchivalPipeline = async (summary: string, session: ChatSession) => {
     try {
+      setIsArchiving(true);
+      // 1. Analyze with AI
       const analysis = await geminiService.analyzeMentalHealth(summary);
-      const mockCid = "Qm" + Array.from({length: 44}, () => "abcdef0123456789"[Math.floor(Math.random() * 16)]).join("");
-      const mockTx = "0x" + Array.from({length: 64}, () => "abcdef0123456789"[Math.floor(Math.random() * 16)]).join("");
-      return { ...analysis, cid: mockCid, tx: mockTx };
+      
+      const journalPayload = {
+        title: session.title,
+        summary,
+        ...analysis,
+        timestamp: new Date().toISOString(),
+        author: walletAddress || 'anonymous'
+      };
+
+      // 2. Upload to IPFS
+      const cid = await ipfsService.uploadJournal(journalPayload);
+
+      // 3. Notarize on Blockchain (only if wallet is connected)
+      let txHash = "N/A (Connect wallet for blockchain notarization)";
+      if (walletAddress) {
+        txHash = await blockchainService.notarizeCID(cid);
+      }
+
+      return { ...analysis, cid, tx: txHash };
     } catch (err) {
       console.error("Pipeline failure", err);
-      return { mentalHealth: "NEUTRAL" as MentalHealthStatus, keywords: [], cid: "N/A", tx: "N/A" };
+      return { mentalHealth: "NEUTRAL" as MentalHealthStatus, keywords: [], cid: "UPLOAD_FAILED", tx: "N/A" };
+    } finally {
+      setIsArchiving(false);
     }
   };
 
@@ -40,7 +69,7 @@ const App: React.FC = () => {
       try {
         const summary = await geminiService.generateHandoffSummary(session.messages);
         if (summary) {
-          const archiveData = await executeArchivalPipeline(summary);
+          const archiveData = await executeArchivalPipeline(summary, session);
           const newJournal: JournalFile = {
             id: 'journal-' + Date.now(),
             sessionId: session.id,
@@ -60,7 +89,7 @@ const App: React.FC = () => {
         console.error("Background archival failed", e);
       }
     }
-  }, [journalFiles]);
+  }, [journalFiles, walletAddress]);
 
   const lockSession = useCallback((id: string) => {
     setSessions(prev => prev.map(s => s.id === id ? { ...s, isLocked: true, updatedAt: new Date().toISOString() } : s));
@@ -282,10 +311,15 @@ const App: React.FC = () => {
           setJournalFiles(prev => prev.filter(j => j.id !== id));
           if (selectedJournal?.id === id) setSelectedJournal(null);
         }}
+        isArchiving={isArchiving}
       />
 
       <div className="flex flex-col flex-grow md:ml-72 transition-all duration-300">
-        <Header onMenuToggle={() => setIsSidebarOpen(!isSidebarOpen)} />
+        <Header 
+          onMenuToggle={() => setIsSidebarOpen(!isSidebarOpen)} 
+          walletAddress={walletAddress}
+          onConnectWallet={handleConnectWallet}
+        />
 
         <main className="flex-grow pt-24 pb-32 px-4 overflow-y-auto">
           <div className="max-w-3xl mx-auto">
@@ -300,7 +334,7 @@ const App: React.FC = () => {
                     </div>
                     <div>
                       <h2 className="text-xl font-serif font-bold text-slate-800 tracking-tight">{selectedJournal.title}</h2>
-                      <p className="text-[10px] uppercase tracking-widest text-emerald-600 font-bold">Encrypted Archive</p>
+                      <p className="text-[10px] uppercase tracking-widest text-emerald-600 font-bold">Web3 Secured Archive</p>
                     </div>
                   </div>
                   <div className={`px-4 py-1.5 rounded-full text-[10px] font-bold tracking-widest uppercase ${
@@ -327,17 +361,34 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
+                <div className="mb-8">
+                  <h3 className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-2">AI Summary</h3>
+                  <p className="text-sm text-slate-600 leading-relaxed font-serif italic bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    {selectedJournal.summary}
+                  </p>
+                </div>
+
                 <div className="space-y-6">
                   <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100">
-                    <h3 className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-4">Integrity Hashes</h3>
+                    <h3 className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-4">Decentralized Proofs</h3>
                     <div className="space-y-4">
                       <div>
-                        <p className="text-[9px] text-slate-400 font-mono mb-1">IPFS CID</p>
-                        <p className="text-[10px] text-emerald-700 break-all font-mono bg-white p-3 rounded-xl border border-emerald-100/50">{selectedJournal.ipfs_cid}</p>
+                        <p className="text-[9px] text-slate-400 font-mono mb-1 uppercase tracking-tighter">IPFS Content Identifier (CID)</p>
+                        <p className="text-[10px] text-emerald-700 break-all font-mono bg-white p-3 rounded-xl border border-emerald-100/50 flex justify-between items-center group">
+                          <span>{selectedJournal.ipfs_cid}</span>
+                          <svg className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 cursor-pointer text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </p>
                       </div>
                       <div>
-                        <p className="text-[9px] text-slate-400 font-mono mb-1">TX HASH</p>
-                        <p className="text-[10px] text-emerald-700 break-all font-mono bg-white p-3 rounded-xl border border-emerald-100/50">{selectedJournal.blockchain_tx}</p>
+                        <p className="text-[9px] text-slate-400 font-mono mb-1 uppercase tracking-tighter">Blockchain Transaction Hash</p>
+                        <p className="text-[10px] text-emerald-700 break-all font-mono bg-white p-3 rounded-xl border border-emerald-100/50 flex justify-between items-center group">
+                          <span>{selectedJournal.blockchain_tx}</span>
+                          <svg className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 cursor-pointer text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -369,7 +420,7 @@ const App: React.FC = () => {
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                       </svg>
-                      <span>Archived</span>
+                      <span>Archived on Web3</span>
                     </div>
                   </div>
                 )}

@@ -1,11 +1,12 @@
-
 import React from 'react';
 
 interface HeaderProps {
   onMenuToggle: () => void;
+  walletAddress: string | null;
+  onConnectWallet: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
+const Header: React.FC<HeaderProps> = ({ onMenuToggle, walletAddress, onConnectWallet }) => {
   return (
     <header className="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-md border-b border-slate-100 z-20 px-4 md:px-6 py-4 ml-0 md:ml-72">
       <div className="max-w-3xl mx-auto flex items-center justify-between">
@@ -36,16 +37,32 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
           </div>
           <div>
             <h1 className="text-lg md:text-xl font-serif font-semibold text-slate-800 tracking-tight leading-none">Serenity Path</h1>
-            <p className="text-[10px] md:text-xs text-emerald-600 font-medium">Listening heart</p>
+            <p className="text-[10px] md:text-xs text-emerald-600 font-medium">Safe & Secure</p>
           </div>
         </div>
-        <div className="flex items-center space-x-2">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
-          <span className="hidden sm:inline-flex text-[10px] uppercase tracking-widest font-semibold text-slate-400">Mindful Space</span>
-        </div>
+        
+        <button 
+          onClick={onConnectWallet}
+          className={`flex items-center space-x-2 px-3 py-1.5 rounded-full border transition-all duration-300 text-[10px] md:text-xs font-bold uppercase tracking-wider ${
+            walletAddress 
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-sm' 
+              : 'bg-white border-slate-200 text-slate-500 hover:border-emerald-300 hover:bg-emerald-50/30'
+          }`}
+        >
+          {walletAddress ? (
+            <>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>{walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}</span>
+            </>
+          ) : (
+            <>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A10.003 10.003 0 0012 21a9.994 9.994 0 008.474-4.691m-1.29-3.44a10.042 10.042 0 01-4.69 8.474M15 9a3 3 0 11-6 0 3 3 0 016 0zm6 3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>Connect Wallet</span>
+            </>
+          )}
+        </button>
       </div>
     </header>
   );
