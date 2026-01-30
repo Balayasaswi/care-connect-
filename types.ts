@@ -2,6 +2,12 @@
 export type Role = 'user' | 'assistant';
 export type MentalHealthStatus = 'HAPPY' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'CRITICAL';
 
+export interface User {
+  email: string;
+  password?: string;
+  id: string;
+}
+
 export interface Message {
   id: string;
   role: Role;
@@ -16,6 +22,7 @@ export interface ChatSession {
   startTime: string;
   updatedAt: string;
   isLocked: boolean;
+  userEmail: string;
 }
 
 export interface JournalFile {
@@ -30,4 +37,5 @@ export interface JournalFile {
   ipfs_cid: string;
   blockchain_tx: string;
   createdAt: string;
+  userEmail: string;
 }

@@ -1,13 +1,18 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Header from './components/Header';
 import MessageBubble from './components/MessageBubble';
 import Sidebar from './components/Sidebar';
+import AuthModal from './components/AuthModal';
+import ProfileModal from './components/ProfileModal';
 import { geminiService } from './services/geminiService';
 import { ipfsService } from './services/ipfsService';
 import { blockchainService } from './services/blockchainService';
-import { Message, ChatSession, JournalFile, MentalHealthStatus } from './types';
+import { authService } from './services/authService';
+import { Message, ChatSession, JournalFile, MentalHealthStatus, User } from './types';
 
 const App: React.FC = () => {
+  const [user, setUser] = useState<User | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [journalFiles, setJournalFiles] = useState<JournalFile[]>([]);
@@ -17,6 +22,7 @@ const App: React.FC = () => {
   const [isArchiving, setIsArchiving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [selectedJournal, setSelectedJournal] = useState<JournalFile | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -29,10 +35,18 @@ const App: React.FC = () => {
     if (address) setWalletAddress(address);
   };
 
+  const handleLogout = () => {
+    authService.logout();
+    setUser(null);
+    setSessions([]);
+    setJournalFiles([]);
+    setIsInitialized(false);
+  };
+
   const executeArchivalPipeline = async (summary: string, session: ChatSession) => {
+    if (!user) return null;
     try {
       setIsArchiving(true);
-      // 1. Analyze with AI
       const analysis = await geminiService.analyzeMentalHealth(summary);
       
       const journalPayload = {
@@ -40,13 +54,15 @@ const App: React.FC = () => {
         summary,
         ...analysis,
         timestamp: new Date().toISOString(),
-        author: walletAddress || 'anonymous'
+        author: walletAddress || 'anonymous',
+        sessionId: session.id,
+        userEmail: user.email
       };
 
-      // 2. Upload to IPFS
-      const cid = await ipfsService.uploadJournal(journalPayload);
+      // 2. Upload to IPFS tagged with user email
+      const cid = await ipfsService.uploadJournal(journalPayload, user.email);
 
-      // 3. Notarize on Blockchain (only if wallet is connected)
+      // 3. Notarize on Blockchain
       let txHash = "N/A (Connect wallet for blockchain notarization)";
       if (walletAddress) {
         txHash = await blockchainService.notarizeCID(cid);
@@ -62,6 +78,7 @@ const App: React.FC = () => {
   };
 
   const triggerAutoArchive = useCallback(async (session: ChatSession) => {
+    if (!user) return;
     const hasUserMessages = session.messages.some(m => m.role === 'user');
     const alreadySummarized = journalFiles.some(j => j.sessionId === session.id);
     
@@ -70,55 +87,51 @@ const App: React.FC = () => {
         const summary = await geminiService.generateHandoffSummary(session.messages);
         if (summary) {
           const archiveData = await executeArchivalPipeline(summary, session);
-          const newJournal: JournalFile = {
-            id: 'journal-' + Date.now(),
-            sessionId: session.id,
-            startTime: session.startTime,
-            endTime: new Date().toISOString(),
-            title: session.title,
-            summary: summary,
-            keywords: archiveData.keywords,
-            mentalHealth: archiveData.mentalHealth,
-            ipfs_cid: archiveData.cid,
-            blockchain_tx: archiveData.tx,
-            createdAt: new Date().toISOString(),
-          };
-          setJournalFiles(prev => [...prev, newJournal]);
+          if (archiveData) {
+            const newJournal: JournalFile = {
+              id: 'journal-' + Date.now(),
+              sessionId: session.id,
+              startTime: session.startTime,
+              endTime: new Date().toISOString(),
+              title: session.title,
+              summary: summary,
+              keywords: archiveData.keywords,
+              mentalHealth: archiveData.mentalHealth,
+              ipfs_cid: archiveData.cid,
+              blockchain_tx: archiveData.tx,
+              createdAt: new Date().toISOString(),
+              userEmail: user.email
+            };
+            setJournalFiles(prev => [...prev, newJournal]);
+          }
         }
       } catch (e) {
         console.error("Background archival failed", e);
       }
     }
-  }, [journalFiles, walletAddress]);
+  }, [journalFiles, walletAddress, user]);
 
   const lockSession = useCallback((id: string) => {
     setSessions(prev => prev.map(s => s.id === id ? { ...s, isLocked: true, updatedAt: new Date().toISOString() } : s));
   }, []);
 
+  // Sync state with User's private decentralized history
   useEffect(() => {
-    const initialize = async () => {
-      let historicalSessions: ChatSession[] = [];
-      let historicalJournals: JournalFile[] = [];
+    if (!user) return;
 
+    const initialize = async () => {
+      // 1. Load Local UI State
+      let historicalSessions: ChatSession[] = [];
       try {
-        const savedSessionsStr = localStorage.getItem('serenity_sessions');
-        const savedJournalsStr = localStorage.getItem('serenity_journals');
-        
+        const savedSessionsStr = localStorage.getItem(`serenity_sessions_${user.email}`);
         if (savedSessionsStr) {
-          const parsed = JSON.parse(savedSessionsStr);
-          if (Array.isArray(parsed)) {
-            historicalSessions = parsed.map((s: ChatSession) => ({ ...s, isLocked: true }));
-          }
+          historicalSessions = JSON.parse(savedSessionsStr).map((s: ChatSession) => ({ ...s, isLocked: true }));
         }
-        if (savedJournalsStr) {
-          const parsed = JSON.parse(savedJournalsStr);
-          if (Array.isArray(parsed)) {
-            historicalJournals = parsed;
-          }
-        }
-      } catch (e) {
-        console.warn("Storage data malformed, starting fresh");
-      }
+      } catch (e) { console.warn("Storage malformed"); }
+
+      // 2. Fetch IPFS History for this user
+      const ipfsJournals = await ipfsService.retrieveHistoryByEmail(user.email);
+      setJournalFiles(ipfsJournals);
 
       const id = Date.now().toString();
       const freshSession: ChatSession = {
@@ -133,29 +146,26 @@ const App: React.FC = () => {
         startTime: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         isLocked: false,
+        userEmail: user.email
       };
 
       setSessions([freshSession, ...historicalSessions]);
-      setJournalFiles(historicalJournals);
       setActiveSessionId(id);
       setIsInitialized(true);
     };
 
     initialize();
-  }, []);
+  }, [user]);
 
+  // Persist local UI sessions
   useEffect(() => {
-    if (isInitialized) {
-      try {
-        localStorage.setItem('serenity_sessions', JSON.stringify(sessions));
-        localStorage.setItem('serenity_journals', JSON.stringify(journalFiles));
-      } catch (e) {
-        console.error("Local storage write error:", e);
-      }
+    if (isInitialized && user) {
+      localStorage.setItem(`serenity_sessions_${user.email}`, JSON.stringify(sessions));
     }
-  }, [sessions, journalFiles, isInitialized]);
+  }, [sessions, isInitialized, user]);
 
   const startNewChat = useCallback(() => {
+    if (!user) return;
     const currentActive = sessions.find(s => s.id === activeSessionId);
     if (currentActive && !currentActive.isLocked) {
       triggerAutoArchive(currentActive);
@@ -175,12 +185,13 @@ const App: React.FC = () => {
       startTime: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       isLocked: false,
+      userEmail: user.email
     };
     setSessions(prev => [newSession, ...prev]);
     setActiveSessionId(id);
     setIsSidebarOpen(false);
     setSelectedJournal(null);
-  }, [activeSessionId, sessions, triggerAutoArchive, lockSession]);
+  }, [activeSessionId, sessions, triggerAutoArchive, lockSession, user]);
 
   const handleSwitchSession = (id: string) => {
     const currentActive = sessions.find(s => s.id === activeSessionId);
@@ -246,15 +257,12 @@ const App: React.FC = () => {
       let fullContent = '';
       for await (const chunk of stream) {
         if (isLoading) setIsLoading(false);
-        
         fullContent += chunk;
         setSessions(prev => prev.map(s => 
           s.id === activeSessionId 
             ? {
                 ...s,
-                messages: s.messages.map(m => 
-                  m.id === assistantId ? { ...m, content: fullContent } : m
-                ),
+                messages: s.messages.map(m => m.id === assistantId ? { ...m, content: fullContent } : m),
                 updatedAt: new Date().toISOString()
               }
             : s
@@ -262,7 +270,7 @@ const App: React.FC = () => {
       }
     } catch (err: any) {
       console.error(err);
-      setError(`Notice: ${err.message || 'An error occurred while connecting. Please try again.'}`);
+      setError(`Notice: ${err.message || 'An error occurred while connecting.'}`);
     } finally {
       setIsLoading(false);
       setIsStreaming(false);
@@ -273,11 +281,21 @@ const App: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeSessionId, sessions]);
 
+  // Handle Init Auth
+  useEffect(() => {
+    const active = authService.getAuthenticatedUser();
+    if (active) setUser(active);
+  }, []);
+
+  if (!user) {
+    return <AuthModal onAuthenticated={setUser} />;
+  }
+
   if (!isInitialized) {
     return (
-      <div className="flex flex-col h-screen items-center justify-center bg-[#faf9f6] text-center p-6">
+      <div className="flex flex-col h-screen items-center justify-center bg-[#faf9f6]">
         <div className="w-12 h-12 border-4 border-emerald-100 border-t-emerald-600 rounded-full animate-spin"></div>
-        <p className="mt-4 text-emerald-800 font-serif italic">Preparing your sanctuary...</p>
+        <p className="mt-4 text-emerald-800 font-serif italic">Synchronizing your private sanctuary...</p>
       </div>
     );
   }
@@ -321,6 +339,19 @@ const App: React.FC = () => {
           onConnectWallet={handleConnectWallet}
         />
 
+        {/* User Account Quick Link */}
+        <div className="fixed top-20 right-6 md:right-10 z-10">
+          <button 
+            onClick={() => setIsProfileOpen(true)}
+            className="flex items-center space-x-2 bg-white/60 hover:bg-white backdrop-blur-md p-1.5 pr-4 rounded-full border border-slate-200 shadow-sm transition-all group"
+          >
+            <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 group-hover:bg-emerald-50 group-hover:text-emerald-600 transition-colors">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+            </div>
+            <span className="text-xs font-semibold text-slate-600">{user.email.split('@')[0]}</span>
+          </button>
+        </div>
+
         <main className="flex-grow pt-24 pb-32 px-4 overflow-y-auto">
           <div className="max-w-3xl mx-auto">
             {selectedJournal ? (
@@ -328,19 +359,16 @@ const App: React.FC = () => {
                 <div className="flex items-center justify-between mb-8">
                   <div className="flex items-center space-x-3">
                     <div className="p-2 bg-emerald-50 rounded-lg">
-                      <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                      </svg>
+                      <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
                     </div>
                     <div>
                       <h2 className="text-xl font-serif font-bold text-slate-800 tracking-tight">{selectedJournal.title}</h2>
-                      <p className="text-[10px] uppercase tracking-widest text-emerald-600 font-bold">Web3 Secured Archive</p>
+                      <p className="text-[10px] uppercase tracking-widest text-emerald-600 font-bold">Secure Private Archive</p>
                     </div>
                   </div>
                   <div className={`px-4 py-1.5 rounded-full text-[10px] font-bold tracking-widest uppercase ${
                     ['HAPPY', 'GOOD'].includes(selectedJournal.mentalHealth) ? 'bg-emerald-100 text-emerald-700' :
-                    selectedJournal.mentalHealth === 'NEUTRAL' ? 'bg-slate-100 text-slate-700' :
-                    'bg-rose-100 text-rose-700'
+                    selectedJournal.mentalHealth === 'NEUTRAL' ? 'bg-slate-100 text-slate-700' : 'bg-rose-100 text-rose-700'
                   }`}>
                     {selectedJournal.mentalHealth}
                   </div>
@@ -356,8 +384,8 @@ const App: React.FC = () => {
                     </div>
                   </div>
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Duration</p>
-                    <p className="text-[10px] text-slate-600">{new Date(selectedJournal.startTime).toLocaleTimeString()} - {new Date(selectedJournal.endTime).toLocaleTimeString()}</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Owner Identity</p>
+                    <p className="text-[10px] text-slate-600 truncate">{selectedJournal.userEmail}</p>
                   </div>
                 </div>
 
@@ -373,22 +401,12 @@ const App: React.FC = () => {
                     <h3 className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-4">Decentralized Proofs</h3>
                     <div className="space-y-4">
                       <div>
-                        <p className="text-[9px] text-slate-400 font-mono mb-1 uppercase tracking-tighter">IPFS Content Identifier (CID)</p>
-                        <p className="text-[10px] text-emerald-700 break-all font-mono bg-white p-3 rounded-xl border border-emerald-100/50 flex justify-between items-center group">
-                          <span>{selectedJournal.ipfs_cid}</span>
-                          <svg className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 cursor-pointer text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                        </p>
+                        <p className="text-[9px] text-slate-400 font-mono mb-1 uppercase">IPFS CID</p>
+                        <p className="text-[10px] text-emerald-700 break-all font-mono bg-white p-3 rounded-xl border border-emerald-100/50">{selectedJournal.ipfs_cid}</p>
                       </div>
                       <div>
-                        <p className="text-[9px] text-slate-400 font-mono mb-1 uppercase tracking-tighter">Blockchain Transaction Hash</p>
-                        <p className="text-[10px] text-emerald-700 break-all font-mono bg-white p-3 rounded-xl border border-emerald-100/50 flex justify-between items-center group">
-                          <span>{selectedJournal.blockchain_tx}</span>
-                          <svg className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 cursor-pointer text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                        </p>
+                        <p className="text-[9px] text-slate-400 font-mono mb-1 uppercase">Blockchain TX</p>
+                        <p className="text-[10px] text-emerald-700 break-all font-mono bg-white p-3 rounded-xl border border-emerald-100/50">{selectedJournal.blockchain_tx}</p>
                       </div>
                     </div>
                   </div>
@@ -397,13 +415,8 @@ const App: React.FC = () => {
             ) : (
               <div className="space-y-4">
                 {messages.map((msg, index) => (
-                  <MessageBubble 
-                    key={msg.id} 
-                    message={msg} 
-                    isStreaming={isStreaming && index === messages.length - 1 && msg.role === 'assistant'}
-                  />
+                  <MessageBubble key={msg.id} message={msg} isStreaming={isStreaming && index === messages.length - 1 && msg.role === 'assistant'} />
                 ))}
-                
                 {isLoading && (
                   <div className="flex justify-start mb-6">
                     <div className="bg-white border border-slate-100 rounded-2xl px-5 py-4 shadow-sm flex items-center space-x-2">
@@ -413,23 +426,15 @@ const App: React.FC = () => {
                     </div>
                   </div>
                 )}
-
                 {isReadOnly && (
                   <div className="text-center py-8">
                     <div className="inline-flex items-center space-x-2 px-4 py-2 bg-slate-100 rounded-full text-slate-400 text-[10px] font-bold tracking-widest uppercase border border-slate-200 shadow-sm">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                      <span>Archived on Web3</span>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                      <span>Archived on IPFS</span>
                     </div>
                   </div>
                 )}
-
-                {error && (
-                  <div className="p-4 rounded-xl bg-red-50 text-red-600 text-xs text-center border border-red-100 font-medium animate-fade-in">
-                    {error}
-                  </div>
-                )}
+                {error && <div className="p-4 rounded-xl bg-red-50 text-red-600 text-xs text-center border border-red-100 animate-fade-in">{error}</div>}
                 <div ref={messagesEndRef} />
               </div>
             )}
@@ -455,14 +460,24 @@ const App: React.FC = () => {
                 disabled={!inputText.trim() || isLoading || isStreaming || isReadOnly}
                 className={`absolute right-3 bottom-3 p-2 rounded-xl transition-all ${inputText.trim() && !isLoading && !isStreaming && !isReadOnly ? 'bg-emerald-600 text-white shadow-md hover:bg-emerald-700' : 'bg-slate-100 text-slate-300'}`}
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
               </button>
             </div>
           </div>
         )}
       </div>
+
+      {isProfileOpen && (
+        <ProfileModal 
+          user={user} 
+          onClose={() => setIsProfileOpen(false)} 
+          onLogout={handleLogout}
+          onUpdated={() => {
+            const updated = authService.getAuthenticatedUser();
+            if (updated) setUser(updated);
+          }}
+        />
+      )}
     </div>
   );
 };
