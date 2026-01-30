@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { authService } from '../services/authService';
 import { emailService, EmailConfig } from '../services/emailService';
+import { ipfsService, IPFSConfig } from '../services/ipfsService';
 import { User } from '../types';
 
 interface ProfileModalProps {
@@ -12,41 +13,55 @@ interface ProfileModalProps {
 }
 
 const ProfileModal: React.FC<ProfileModalProps> = ({ user, onClose, onLogout, onUpdated }) => {
-  const [step, setStep] = useState<'view' | 'edit' | 'otp' | 'config'>('view');
+  const [step, setStep] = useState<'view' | 'edit' | 'otp' | 'config_email' | 'config_ipfs'>('view');
   const [newEmail, setNewEmail] = useState(user.email);
   const [newPassword, setNewPassword] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [error, setError] = useState('');
   const [isSending, setIsSending] = useState(false);
 
-  // Email Config States
+  // Service Config States
   const [emailConfig, setEmailConfig] = useState<EmailConfig>({
     serviceId: '',
     templateId: '',
     publicKey: ''
   });
 
+  const [ipfsConfig, setIpfsConfig] = useState<IPFSConfig>({
+    apiKey: '',
+    apiSecret: ''
+  });
+
   useEffect(() => {
-    const saved = emailService.getConfig();
-    if (saved) setEmailConfig(saved);
+    const savedEmail = emailService.getConfig();
+    if (savedEmail) setEmailConfig(savedEmail);
+
+    const savedIpfs = ipfsService.getConfig();
+    if (savedIpfs) setIpfsConfig(savedIpfs);
   }, []);
 
-  const handleSaveConfig = (e: React.FormEvent) => {
+  const handleSaveEmailConfig = (e: React.FormEvent) => {
     e.preventDefault();
     emailService.saveConfig(emailConfig);
     setStep('view');
     alert("Email service configuration saved.");
   };
 
+  const handleSaveIpfsConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    ipfsService.saveConfig(ipfsConfig);
+    setStep('view');
+    alert("IPFS storage configuration saved.");
+  };
+
   const handleRequestChange = async () => {
     setIsSending(true);
     setError('');
     try {
-      // The OTP is sent to the user's CURRENT email for security
       await authService.requestOTP(user.email);
       setStep('otp');
     } catch (err: any) {
-      setError("Failed to send verification code. Please check your config.");
+      setError("Failed to send verification code. Please check your email config.");
     } finally {
       setIsSending(false);
     }
@@ -77,82 +92,109 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ user, onClose, onLogout, on
         </button>
 
         <div className="mb-8">
-          <h2 className="text-2xl font-serif font-bold text-slate-800 mb-1">Security Settings</h2>
-          <p className="text-slate-500 text-sm">Manage your private identity and credentials.</p>
+          <h2 className="text-2xl font-serif font-bold text-slate-800 mb-1">Sanctuary Settings</h2>
+          <p className="text-slate-500 text-sm">Configure your private & decentralized tools.</p>
         </div>
 
         {step === 'view' && (
-          <div className="space-y-6">
-            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 transition-all hover:border-emerald-100 group">
-              <label className="text-[10px] uppercase font-bold text-slate-400 tracking-widest block mb-2 group-hover:text-emerald-500 transition-colors">Registered Email</label>
+          <div className="space-y-4">
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 group">
+              <label className="text-[10px] uppercase font-bold text-slate-400 tracking-widest block mb-2">Authenticated As</label>
               <div className="text-slate-700 font-medium flex items-center space-x-2">
-                <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
+                <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
                 <span>{user.email}</span>
               </div>
             </div>
-            <div className="flex flex-col space-y-3">
+
+            <div className="grid grid-cols-1 gap-3">
               <button 
                 onClick={() => setStep('edit')}
-                className="w-full bg-white border border-slate-200 text-slate-700 font-bold py-4 rounded-2xl hover:bg-slate-50 hover:border-emerald-200 transition-all shadow-sm active:scale-[0.98]"
+                className="w-full bg-white border border-slate-200 text-slate-700 font-bold py-4 rounded-2xl hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center space-x-2"
               >
-                Modify Credentials
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                <span>Edit Credentials</span>
               </button>
+              
               <button 
-                onClick={() => setStep('config')}
-                className="w-full bg-emerald-50 text-emerald-700 font-bold py-4 rounded-2xl hover:bg-emerald-100 transition-all active:scale-[0.98] border border-emerald-100"
+                onClick={() => setStep('config_email')}
+                className="w-full bg-emerald-50 text-emerald-700 font-bold py-4 rounded-2xl hover:bg-emerald-100 transition-all border border-emerald-100 flex items-center justify-center space-x-2"
               >
-                Configure Real Email Service
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                <span>Email Service (OTP)</span>
               </button>
+
+              <button 
+                onClick={() => setStep('config_ipfs')}
+                className="w-full bg-blue-50 text-blue-700 font-bold py-4 rounded-2xl hover:bg-blue-100 transition-all border border-blue-100 flex items-center justify-center space-x-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                <span>IPFS Storage (Real)</span>
+              </button>
+
               <button 
                 onClick={onLogout}
-                className="w-full bg-rose-50 text-rose-600 font-bold py-4 rounded-2xl hover:bg-rose-100 transition-all active:scale-[0.98]"
+                className="w-full bg-rose-50 text-rose-600 font-bold py-4 rounded-2xl hover:bg-rose-100 transition-all"
               >
-                Log out of Sanctuary
+                Disconnect
               </button>
             </div>
           </div>
         )}
 
-        {step === 'config' && (
-          <form onSubmit={handleSaveConfig} className="space-y-4">
-            <div className="bg-emerald-50 p-4 rounded-xl text-xs text-emerald-800 mb-4">
-              Enter your <a href="https://www.emailjs.com/" target="_blank" className="underline font-bold">EmailJS</a> credentials to enable real email delivery to your inbox.
+        {step === 'config_ipfs' && (
+          <form onSubmit={handleSaveIpfsConfig} className="space-y-4">
+            <div className="bg-blue-50 p-4 rounded-xl text-[11px] text-blue-800 mb-4 border border-blue-100">
+              <p className="font-bold mb-1">Real IPFS Connection</p>
+              Connect to <a href="https://www.pinata.cloud/" target="_blank" className="underline font-bold">Pinata</a> to store your journals on the global decentralized network.
             </div>
             <div>
-              <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">EmailJS Service ID</label>
+              <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Pinata API Key</label>
               <input 
                 required
-                value={emailConfig.serviceId} 
-                onChange={e => setEmailConfig({...emailConfig, serviceId: e.target.value})}
-                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-300 transition-all"
-                placeholder="service_xxxxx"
+                value={ipfsConfig.apiKey} 
+                onChange={e => setIpfsConfig({...ipfsConfig, apiKey: e.target.value})}
+                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-300"
+                placeholder="API Key"
               />
             </div>
             <div>
-              <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">EmailJS Template ID</label>
+              <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Pinata Secret Key</label>
               <input 
                 required
-                value={emailConfig.templateId} 
-                onChange={e => setEmailConfig({...emailConfig, templateId: e.target.value})}
-                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-300 transition-all"
-                placeholder="template_xxxxx"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">EmailJS Public Key</label>
-              <input 
-                required
-                value={emailConfig.publicKey} 
-                onChange={e => setEmailConfig({...emailConfig, publicKey: e.target.value})}
-                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-300 transition-all"
-                placeholder="user_xxxxxxxxxxxxxxx"
+                type="password"
+                value={ipfsConfig.apiSecret} 
+                onChange={e => setIpfsConfig({...ipfsConfig, apiSecret: e.target.value})}
+                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-300"
+                placeholder="Secret API Key"
               />
             </div>
             <div className="flex space-x-3 pt-2">
-              <button type="button" onClick={() => setStep('view')} className="flex-1 bg-slate-100 text-slate-600 font-bold py-3.5 rounded-xl">Cancel</button>
-              <button type="submit" className="flex-1 bg-emerald-600 text-white font-bold py-3.5 rounded-xl">Save Config</button>
+              <button type="button" onClick={() => setStep('view')} className="flex-1 bg-slate-100 text-slate-600 font-bold py-3.5 rounded-xl">Back</button>
+              <button type="submit" className="flex-1 bg-blue-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-600/20">Enable Real IPFS</button>
+            </div>
+          </form>
+        )}
+
+        {step === 'config_email' && (
+          <form onSubmit={handleSaveEmailConfig} className="space-y-4">
+            <div className="bg-emerald-50 p-4 rounded-xl text-[11px] text-emerald-800 mb-4 border border-emerald-100">
+              Use <a href="https://www.emailjs.com/" target="_blank" className="underline font-bold">EmailJS</a> to receive verification codes in your actual inbox.
+            </div>
+            <div>
+              <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Service ID</label>
+              <input required value={emailConfig.serviceId} onChange={e => setEmailConfig({...emailConfig, serviceId: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-300" placeholder="service_xxxxx" />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Template ID</label>
+              <input required value={emailConfig.templateId} onChange={e => setEmailConfig({...emailConfig, templateId: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-300" placeholder="template_xxxxx" />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Public Key</label>
+              <input required value={emailConfig.publicKey} onChange={e => setEmailConfig({...emailConfig, publicKey: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-300" placeholder="user_xxxxx" />
+            </div>
+            <div className="flex space-x-3 pt-2">
+              <button type="button" onClick={() => setStep('view')} className="flex-1 bg-slate-100 text-slate-600 font-bold py-3.5 rounded-xl">Back</button>
+              <button type="submit" className="flex-1 bg-emerald-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-600/20">Save Email Config</button>
             </div>
           </form>
         )}
@@ -160,43 +202,17 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ user, onClose, onLogout, on
         {step === 'edit' && (
           <div className="space-y-4">
             <div>
-              <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 ml-1 block">New Email Address</label>
-              <input 
-                type="email"
-                value={newEmail} 
-                onChange={e => setNewEmail(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-300 transition-all text-slate-700"
-                placeholder="new.email@example.com"
-              />
+              <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 ml-1 block">New Email</label>
+              <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-300" placeholder="new.email@example.com" />
             </div>
             <div>
-              <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 ml-1 block">New Password (Optional)</label>
-              <input 
-                type="password"
-                value={newPassword} 
-                onChange={e => setNewPassword(e.target.value)}
-                placeholder="Leave blank to keep current"
-                className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-300 transition-all text-slate-700"
-              />
+              <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 ml-1 block">New Password</label>
+              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="••••••••" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-300" />
             </div>
             <div className="pt-4 flex space-x-3">
-              <button 
-                onClick={() => setStep('view')} 
-                className="flex-1 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={handleRequestChange} 
-                disabled={isSending}
-                className="flex-1 bg-emerald-600 text-white font-bold py-4 rounded-2xl hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition-all active:scale-[0.98] disabled:opacity-50"
-              >
-                {isSending ? (
-                  <span className="flex items-center justify-center space-x-2">
-                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    <span>Sending...</span>
-                  </span>
-                ) : 'Request OTP'}
+              <button onClick={() => setStep('view')} className="flex-1 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl">Cancel</button>
+              <button onClick={handleRequestChange} disabled={isSending} className="flex-1 bg-emerald-600 text-white font-bold py-4 rounded-2xl disabled:opacity-50">
+                {isSending ? 'Sending OTP...' : 'Request OTP'}
               </button>
             </div>
           </div>
@@ -204,44 +220,15 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ user, onClose, onLogout, on
 
         {step === 'otp' && (
           <div className="text-center">
-            <div className="bg-emerald-50 text-emerald-700 p-5 rounded-[2rem] mb-8 text-sm leading-relaxed border border-emerald-100 animate-fade-in">
-              <p className="font-semibold mb-1">Verify your identity</p>
-              <p className="opacity-80">A 6-digit verification code was sent to:</p>
+            <div className="bg-emerald-50 text-emerald-700 p-5 rounded-[2rem] mb-8 text-sm border border-emerald-100">
+              <p className="opacity-80">Verification code sent to:</p>
               <p className="font-mono mt-1 font-bold text-emerald-800">{user.email}</p>
             </div>
-            
             <div className="mb-8">
-              <label className="text-[10px] uppercase font-bold text-slate-400 mb-3 block tracking-widest">Verification Code</label>
-              <input 
-                type="text"
-                maxLength={6}
-                value={otpCode}
-                onChange={e => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                className="w-full text-center text-4xl font-mono tracking-[0.5em] bg-slate-50 border border-slate-200 rounded-2xl p-5 focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-400 transition-all text-slate-800"
-                placeholder="000000"
-              />
+              <input type="text" maxLength={6} value={otpCode} onChange={e => setOtpCode(e.target.value.replace(/\D/g, ''))} className="w-full text-center text-4xl font-mono tracking-[0.5em] bg-slate-50 border border-slate-200 rounded-2xl p-5 focus:outline-none focus:border-emerald-400" placeholder="000000" />
             </div>
-
-            {error && (
-              <p className="text-rose-500 text-xs mb-6 font-medium bg-rose-50 py-2 rounded-lg border border-rose-100 animate-pulse">
-                {error}
-              </p>
-            )}
-
-            <div className="space-y-3">
-              <button 
-                onClick={handleVerifyOTP}
-                className="w-full bg-emerald-600 text-white font-bold py-4 rounded-2xl shadow-xl shadow-emerald-600/20 active:scale-95 hover:bg-emerald-700 transition-all"
-              >
-                Verify & Update
-              </button>
-              <button 
-                onClick={() => setStep('edit')}
-                className="text-xs text-slate-400 hover:text-slate-600 font-bold uppercase tracking-wider transition-colors"
-              >
-                Back to Edit
-              </button>
-            </div>
+            {error && <p className="text-rose-500 text-xs mb-6 font-medium">{error}</p>}
+            <button onClick={handleVerifyOTP} className="w-full bg-emerald-600 text-white font-bold py-4 rounded-2xl shadow-xl shadow-emerald-600/20 active:scale-95">Verify & Update</button>
           </div>
         )}
       </div>
