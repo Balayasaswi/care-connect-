@@ -1,6 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { authService } from '../services/authService';
+import { emailService, EmailConfig } from '../services/emailService';
 import { User } from '../types';
 
 interface ProfileModalProps {
@@ -11,12 +12,31 @@ interface ProfileModalProps {
 }
 
 const ProfileModal: React.FC<ProfileModalProps> = ({ user, onClose, onLogout, onUpdated }) => {
-  const [step, setStep] = useState<'view' | 'edit' | 'otp'>('view');
+  const [step, setStep] = useState<'view' | 'edit' | 'otp' | 'config'>('view');
   const [newEmail, setNewEmail] = useState(user.email);
   const [newPassword, setNewPassword] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [error, setError] = useState('');
   const [isSending, setIsSending] = useState(false);
+
+  // Email Config States
+  const [emailConfig, setEmailConfig] = useState<EmailConfig>({
+    serviceId: '',
+    templateId: '',
+    publicKey: ''
+  });
+
+  useEffect(() => {
+    const saved = emailService.getConfig();
+    if (saved) setEmailConfig(saved);
+  }, []);
+
+  const handleSaveConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    emailService.saveConfig(emailConfig);
+    setStep('view');
+    alert("Email service configuration saved.");
+  };
 
   const handleRequestChange = async () => {
     setIsSending(true);
@@ -26,7 +46,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ user, onClose, onLogout, on
       await authService.requestOTP(user.email);
       setStep('otp');
     } catch (err: any) {
-      setError("Failed to send verification code. Please try again.");
+      setError("Failed to send verification code. Please check your config.");
     } finally {
       setIsSending(false);
     }
@@ -80,6 +100,12 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ user, onClose, onLogout, on
                 Modify Credentials
               </button>
               <button 
+                onClick={() => setStep('config')}
+                className="w-full bg-emerald-50 text-emerald-700 font-bold py-4 rounded-2xl hover:bg-emerald-100 transition-all active:scale-[0.98] border border-emerald-100"
+              >
+                Configure Real Email Service
+              </button>
+              <button 
                 onClick={onLogout}
                 className="w-full bg-rose-50 text-rose-600 font-bold py-4 rounded-2xl hover:bg-rose-100 transition-all active:scale-[0.98]"
               >
@@ -87,6 +113,48 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ user, onClose, onLogout, on
               </button>
             </div>
           </div>
+        )}
+
+        {step === 'config' && (
+          <form onSubmit={handleSaveConfig} className="space-y-4">
+            <div className="bg-emerald-50 p-4 rounded-xl text-xs text-emerald-800 mb-4">
+              Enter your <a href="https://www.emailjs.com/" target="_blank" className="underline font-bold">EmailJS</a> credentials to enable real email delivery to your inbox.
+            </div>
+            <div>
+              <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">EmailJS Service ID</label>
+              <input 
+                required
+                value={emailConfig.serviceId} 
+                onChange={e => setEmailConfig({...emailConfig, serviceId: e.target.value})}
+                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-300 transition-all"
+                placeholder="service_xxxxx"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">EmailJS Template ID</label>
+              <input 
+                required
+                value={emailConfig.templateId} 
+                onChange={e => setEmailConfig({...emailConfig, templateId: e.target.value})}
+                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-300 transition-all"
+                placeholder="template_xxxxx"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">EmailJS Public Key</label>
+              <input 
+                required
+                value={emailConfig.publicKey} 
+                onChange={e => setEmailConfig({...emailConfig, publicKey: e.target.value})}
+                className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-300 transition-all"
+                placeholder="user_xxxxxxxxxxxxxxx"
+              />
+            </div>
+            <div className="flex space-x-3 pt-2">
+              <button type="button" onClick={() => setStep('view')} className="flex-1 bg-slate-100 text-slate-600 font-bold py-3.5 rounded-xl">Cancel</button>
+              <button type="submit" className="flex-1 bg-emerald-600 text-white font-bold py-3.5 rounded-xl">Save Config</button>
+            </div>
+          </form>
         )}
 
         {step === 'edit' && (
