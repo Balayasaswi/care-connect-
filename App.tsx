@@ -120,16 +120,16 @@ const App: React.FC = () => {
     if (!user) return;
 
     const initialize = async () => {
-      // 1. Load Local UI State
+      // 1. Load Local UI State for sessions
       let historicalSessions: ChatSession[] = [];
       try {
         const savedSessionsStr = localStorage.getItem(`serenity_sessions_${user.email}`);
         if (savedSessionsStr) {
           historicalSessions = JSON.parse(savedSessionsStr).map((s: ChatSession) => ({ ...s, isLocked: true }));
         }
-      } catch (e) { console.warn("Storage malformed"); }
+      } catch (e) { console.warn("Local session storage malformed"); }
 
-      // 2. Fetch IPFS History for this user
+      // 2. Fetch IPFS History STRICTLY by user email
       const ipfsJournals = await ipfsService.retrieveHistoryByEmail(user.email);
       setJournalFiles(ipfsJournals);
 
@@ -295,7 +295,7 @@ const App: React.FC = () => {
     return (
       <div className="flex flex-col h-screen items-center justify-center bg-[#faf9f6]">
         <div className="w-12 h-12 border-4 border-emerald-100 border-t-emerald-600 rounded-full animate-spin"></div>
-        <p className="mt-4 text-emerald-800 font-serif italic">Synchronizing your private sanctuary...</p>
+        <p className="mt-4 text-emerald-800 font-serif italic">Restoring your private shard...</p>
       </div>
     );
   }
