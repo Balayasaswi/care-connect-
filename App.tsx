@@ -25,6 +25,7 @@ const App: React.FC = () => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [selectedJournal, setSelectedJournal] = useState<JournalFile | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -120,6 +121,7 @@ const App: React.FC = () => {
     if (!user) return;
 
     const initialize = async () => {
+      setIsSyncing(true);
       // 1. Load Local UI State for sessions
       let historicalSessions: ChatSession[] = [];
       try {
@@ -129,7 +131,7 @@ const App: React.FC = () => {
         }
       } catch (e) { console.warn("Local session storage malformed"); }
 
-      // 2. Fetch IPFS History STRICTLY by user email
+      // 2. Fetch REAL IPFS History
       const ipfsJournals = await ipfsService.retrieveHistoryByEmail(user.email);
       setJournalFiles(ipfsJournals);
 
@@ -151,6 +153,7 @@ const App: React.FC = () => {
 
       setSessions([freshSession, ...historicalSessions]);
       setActiveSessionId(id);
+      setIsSyncing(false);
       setIsInitialized(true);
     };
 
@@ -295,7 +298,9 @@ const App: React.FC = () => {
     return (
       <div className="flex flex-col h-screen items-center justify-center bg-[#faf9f6]">
         <div className="w-12 h-12 border-4 border-emerald-100 border-t-emerald-600 rounded-full animate-spin"></div>
-        <p className="mt-4 text-emerald-800 font-serif italic">Restoring your private shard...</p>
+        <p className="mt-4 text-emerald-800 font-serif italic">
+          {isSyncing ? 'Synchronizing with real IPFS network...' : 'Initializing your sanctuary...'}
+        </p>
       </div>
     );
   }
@@ -410,6 +415,16 @@ const App: React.FC = () => {
                       </div>
                     </div>
                   </div>
+                </div>
+                <div className="mt-8 text-center">
+                   <a 
+                    href={`https://gateway.pinata.cloud/ipfs/${selectedJournal.ipfs_cid}`} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-bold text-slate-400 hover:text-emerald-600 transition-colors uppercase tracking-widest"
+                  >
+                    View Source on IPFS Network
+                  </a>
                 </div>
               </div>
             ) : (
