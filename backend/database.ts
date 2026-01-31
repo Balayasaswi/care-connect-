@@ -1,13 +1,26 @@
+import fs from 'fs';
+import path from 'path';
 
 export class DatabaseManager {
-  private STORAGE_KEY = 'server_db_users';
+  private STORAGE_PATH = path.join(process.cwd(), 'data', 'users.json');
+
+  constructor() {
+    const dir = path.dirname(this.STORAGE_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  }
 
   private getUsers(): any[] {
-    return JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]');
+    try {
+      return JSON.parse(fs.readFileSync(this.STORAGE_PATH, 'utf-8'));
+    } catch {
+      return [];
+    }
   }
 
   private saveUsers(users: any[]) {
-    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(users));
+    fs.writeFileSync(this.STORAGE_PATH, JSON.stringify(users, null, 2));
   }
 
   public register(body: any) {
