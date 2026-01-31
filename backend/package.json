@@ -1,0 +1,24 @@
+{
+  "name": "care-connect-backend",
+  "version": "1.0.0",
+  "description": "Backend for Care Connect application",
+  "type": "module",
+  "main": "main.ts",
+  "scripts": {
+    "dev": "ts-node main.ts",
+    "build": "tsc",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "ethers": "^6.13.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.6",
+    "typescript": "^5.8.2",
+    "ts-node": "^10.9.2"
+  }
+}
