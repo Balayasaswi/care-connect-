@@ -1,4 +1,6 @@
 
+import express from 'express';
+import cors from 'cors';
 import { DatabaseManager } from "./database";
 import { AIEngine } from "./ai_engine";
 import { IPFSManager } from "./ipfs_manager";
@@ -13,6 +15,46 @@ class SerenityBackend {
   private ai = new AIEngine();
   private ipfs = new IPFSManager();
   private mail = new MailEngine();
+  private app = express();
+
+  constructor() {
+    this.setupMiddleware();
+    this.setupRoutes();
+  }
+
+  private setupMiddleware() {
+    this.app.use(cors());
+    this.app.use(express.json());
+  }
+
+  private setupRoutes() {
+    // Auth routes
+    this.app.post('/auth/login', this.handleAuthLogin.bind(this));
+    this.app.post('/auth/register', this.handleAuthRegister.bind(this));
+
+    // Health check
+    this.app.get('/health', (req, res) => {
+      res.json({ status: 'Backend is running' });
+    });
+  }
+
+  private async handleAuthLogin(req: any, res: any) {
+    try {
+      const result = await this.db.login(req.body);
+      res.json(result);
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message });
+    }
+  }
+
+  private async handleAuthRegister(req: any, res: any) {
+    try {
+      const result = await this.db.register(req.body);
+      res.json(result);
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message });
+    }
+  }
 
   // --- Auth ---
   public async handleAuth(path: 'login' | 'register', body: any) {
@@ -41,6 +83,14 @@ class SerenityBackend {
   public async sendMail(email: string, otp: string) {
     return this.mail.sendOTP(email, otp);
   }
+
+  public start(port: number = 5000) {
+    this.app.listen(port, () => {
+      console.log(`🚀 Backend running on http://localhost:${port}`);
+    });
+  }
 }
 
-export const server = new SerenityBackend();
+const server = new SerenityBackend();
+const PORT = process.env.PORT || 5000;
+server.start(Number(PORT));
