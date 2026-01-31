@@ -1,10 +1,10 @@
 
 import express from 'express';
 import cors from 'cors';
-import { DatabaseManager } from "./database.js";
-import { AIEngine } from "./ai_engine.js";
-import { IPFSManager } from "./ipfs_manager.js";
-import { MailEngine } from "./mail_engine.js";
+import { DatabaseManager } from "./database";
+import { AIEngine } from "./ai_engine";
+import { IPFSManager } from "./ipfs_manager";
+import { MailEngine } from "./mail_engine";
 
 /**
  * SERENITY PATH SECURE BACKEND
