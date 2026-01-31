@@ -91,6 +91,6 @@ class SerenityBackend {
   }
 }
 
-const server = new SerenityBackend();
+export const server = new SerenityBackend();
 const PORT = process.env.PORT || 5000;
 server.start(Number(PORT));
